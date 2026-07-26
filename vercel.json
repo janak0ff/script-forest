@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "zsh-setup.sh",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/zsh-setup.sh",
+      "headers": {
+        "Content-Type": "text/plain"
+      }
+    }
+  ]
+}
