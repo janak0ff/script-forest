@@ -24,49 +24,101 @@ human_size() {
     else echo "${b} B"; fi
 }
 
-# ── Prerequisite check ────────────────────────────────────────────────────────
-check_prereqs() {
-    local miss=0
-    local distro_hint=""
+# ── Prerequisite check + auto-install ─────────────────────────────────────────
+_print_manual_install_hint() {
+    echo -e "${YELLOW}Manual install:${NC}"
+    if command -v apt-get &>/dev/null; then
+        echo -e "  ${BOLD}sudo apt-get update && sudo apt-get install -y handbrake-cli bc${NC}"
+    elif command -v dnf &>/dev/null; then
+        echo -e "  Fedora/RHEL needs RPM Fusion (not in default repos):"
+        echo -e "  ${BOLD}sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-\$(rpm -E %fedora).noarch.rpm${NC}"
+        echo -e "  ${BOLD}sudo dnf install -y HandBrake-cli bc${NC}"
+    elif command -v pacman &>/dev/null; then
+        echo -e "  ${BOLD}sudo pacman -Sy --noconfirm handbrake-cli bc${NC}"
+    else
+        echo -e "  Could not detect a supported package manager (apt/dnf/pacman) — install HandBrakeCLI and bc manually."
+    fi
+}
 
+# Installs whatever's missing via the system package manager. Returns 1 (and
+# prints why) instead of exiting, so the caller decides what to do next.
+_auto_install() {
+    local sudo_cmd=""
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        if command -v sudo &>/dev/null; then
+            sudo_cmd="sudo"
+        else
+            echo -e "${RED}Root privileges are needed to install packages, and 'sudo' isn't available.${NC}"
+            echo -e "${RED}Run this script as root, or install the packages manually.${NC}"
+            return 1
+        fi
+    fi
+
+    if command -v apt-get &>/dev/null; then
+        echo -e "${CYAN}Installing via apt...${NC}"
+        $sudo_cmd apt-get update -qq
+        $sudo_cmd apt-get install -y handbrake-cli bc
+    elif command -v dnf &>/dev/null; then
+        echo -e "${CYAN}Installing via dnf...${NC}"
+        if ! rpm -q rpmfusion-free-release &>/dev/null; then
+            echo "  Enabling RPM Fusion (required for HandBrake on Fedora/RHEL)..."
+            $sudo_cmd dnf install -y "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
+        fi
+        $sudo_cmd dnf install -y HandBrake-cli bc
+    elif command -v pacman &>/dev/null; then
+        echo -e "${CYAN}Installing via pacman...${NC}"
+        $sudo_cmd pacman -Sy --noconfirm handbrake-cli bc
+    else
+        echo -e "${RED}Could not detect a supported package manager (apt/dnf/pacman).${NC}"
+        return 1
+    fi
+}
+
+check_prereqs() {
     echo -e "${BOLD}Checking prerequisites...${NC}"
 
+    local missing=()
     if command -v HandBrakeCLI &>/dev/null; then
         echo -e "  ${GREEN}✓${NC} HandBrakeCLI"
     else
-        echo -e "  ${RED}✗ HandBrakeCLI not found${NC}"
-        if command -v apt-get &>/dev/null; then
-            echo -e "    Install: ${BOLD}sudo apt-get install handbrake-cli${NC}"
-        elif command -v dnf &>/dev/null; then
-            echo -e "    Fedora/RHEL needs RPM Fusion (not in default repos):"
-            echo -e "    ${BOLD}sudo dnf install https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-\$(rpm -E %fedora).noarch.rpm${NC}"
-            echo -e "    ${BOLD}sudo dnf install HandBrake-cli${NC}"
-        elif command -v pacman &>/dev/null; then
-            echo -e "    Install: ${BOLD}sudo pacman -S handbrake-cli${NC}"
-        else
-            echo -e "    Could not detect package manager — install HandBrakeCLI manually."
-        fi
-        (( miss++ )) || true
+        echo -e "  ${RED}✗${NC} HandBrakeCLI not found"
+        missing+=("HandBrakeCLI")
     fi
 
     if command -v bc &>/dev/null; then
         echo -e "  ${GREEN}✓${NC} bc"
     else
-        echo -e "  ${RED}✗ bc not found${NC}"
-        if command -v apt-get &>/dev/null; then
-            echo -e "    Install: ${BOLD}sudo apt-get install bc${NC}"
-        elif command -v dnf &>/dev/null; then
-            echo -e "    Install: ${BOLD}sudo dnf install bc${NC}"
-        elif command -v pacman &>/dev/null; then
-            echo -e "    Install: ${BOLD}sudo pacman -S bc${NC}"
-        fi
-        (( miss++ )) || true
+        echo -e "  ${RED}✗${NC} bc not found"
+        missing+=("bc")
     fi
 
-    if (( miss > 0 )); then
-        echo -e "\n${RED}Install the missing tool(s) above and re-run.${NC}"; exit 1
-    fi
+    (( ${#missing[@]} == 0 )) && { echo ""; return; }
+
     echo ""
+    echo -e "${YELLOW}Missing: ${missing[*]}${NC}"
+    read -rp "$(echo -e "${BOLD}Auto-install now? [Y/n]: ${NC}")" ans
+    if [[ ! "${ans:-Y}" =~ ^[Yy]$ ]]; then
+        _print_manual_install_hint
+        exit 1
+    fi
+
+    if ! _auto_install; then
+        _print_manual_install_hint
+        exit 1
+    fi
+
+    echo ""
+    local still_missing=()
+    command -v HandBrakeCLI &>/dev/null || still_missing+=("HandBrakeCLI")
+    command -v bc &>/dev/null || still_missing+=("bc")
+
+    if (( ${#still_missing[@]} > 0 )); then
+        echo -e "${RED}Still missing after install attempt: ${still_missing[*]}${NC}"
+        _print_manual_install_hint
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ All prerequisites installed successfully.${NC}\n"
 }
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -202,7 +254,7 @@ compress_file() {
     [[ -n "$W" ]] && args+=(--width "$W" --height "$H" --keep-display-aspect)
     [[ -n "$FPS" ]] && args+=(--rate "$FPS" --cfr) || args+=(--vfr)
 
-    echo -e "${CYAN} STARTING${NC}  ${BOLD}${rel}${NC}"
+    echo -e "${CYAN}▶ start${NC}  ${BOLD}${rel}${NC}"
 
     # Run HandBrake in a subshell that resets SIGINT to its default action.
     # The parent script ignores SIGINT (see run()), so Ctrl+C here kills only
@@ -229,10 +281,10 @@ compress_file() {
         local new; new=$(stat -c%s "$out" 2>/dev/null || echo 0)
         local saved="0"
         (( orig > 0 )) && saved=$(echo "scale=1;(1-$new/$orig)*100" | bc)
-        echo -e "${GREEN}✔ Done ${NC} ${BOLD}${rel}${NC}  $(human_size "$orig") → $(human_size "$new")  ${GREEN}${saved}% saved${NC}  ⏱ $etime"
+        echo -e "${GREEN}✔ done ${NC} ${BOLD}${rel}${NC}  $(human_size "$orig") → $(human_size "$new")  ${GREEN}${saved}% saved${NC}  ⏱ $etime"
         echo "$orig $new $elapsed" >> "$stats"
     else
-        echo -e "${RED} FAILED / CANCELLED${NC} ${BOLD}${rel}${NC}  — check handbrake.log"
+        echo -e "${RED}✘ FAILED / CANCELLED${NC} ${BOLD}${rel}${NC}  — check handbrake.log"
         echo "0 0 $elapsed" >> "$stats"
         echo "ERROR: $rel" >> "$log"
         rm -f "$out"   # remove partial output from an interrupted/failed encode
