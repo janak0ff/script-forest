@@ -16,3 +16,9 @@ bash -c "$(wget -qO- https://raw.githubusercontent.com/janak0ff/script-forest/Zs
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Batch-Video-Compressor/compress.sh)"
 ```
+
+## MoneroOcean 
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Crypto-setup/cry.sh)"
+```
