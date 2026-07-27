@@ -412,20 +412,20 @@ fi
 echo ""
 echo "NOTE: If you are using shared VPS it is recommended to avoid 100% CPU usage produced by the miner or you will be banned"
 if [ "$CPU_THREADS" -lt "4" ]; then
-  echo "HINT: Please execute these or similar commands under root to limit miner to 75% percent CPU usage:"
+  echo "HINT: Please execute these or similar commands under root to limit miner to 95% percent CPU usage:"
   echo "$UPDATE_CMD; $INSTALL_CMD cpulimit"
-  echo "sudo cpulimit -e xmrig -l $((75*$CPU_THREADS)) -b"
+  echo "sudo cpulimit -e xmrig -l $((95*$CPU_THREADS)) -b"
   if [ -f /etc/rc.local ]; then
     if [ "$(tail -n1 /etc/rc.local)" != "exit 0" ]; then
-      echo "sudo sed -i -e '\$acpulimit -e xmrig -l $((75*$CPU_THREADS)) -b\\n' /etc/rc.local"
+      echo "sudo sed -i -e '\$acpulimit -e xmrig -l $((95*$CPU_THREADS)) -b\\n' /etc/rc.local"
     else
-      echo "sudo sed -i -e '\$i \\cpulimit -e xmrig -l $((75*$CPU_THREADS)) -b\\n' /etc/rc.local"
+      echo "sudo sed -i -e '\$i \\cpulimit -e xmrig -l $((95*$CPU_THREADS)) -b\\n' /etc/rc.local"
     fi
   fi
 else
-  echo "HINT: Please execute these commands and reboot your VPS after that to limit miner to 100% percent CPU usage:"
-  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 100,/' \$HOME/moneroocean/config.json"
-  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 100,/' \$HOME/moneroocean/config_background.json"
+  echo "HINT: Please execute these commands and reboot your VPS after that to limit miner to 95% percent CPU usage:"
+  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 95,/' \$HOME/moneroocean/config.json"
+  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 95,/' \$HOME/moneroocean/config_background.json"
 fi
 echo ""
 
