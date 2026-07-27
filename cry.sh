@@ -423,9 +423,9 @@ if [ "$CPU_THREADS" -lt "4" ]; then
     fi
   fi
 else
-  echo "HINT: Please execute these commands and reboot your VPS after that to limit miner to 75% percent CPU usage:"
-  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 90,/' \$HOME/moneroocean/config.json"
-  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 90,/' \$HOME/moneroocean/config_background.json"
+  echo "HINT: Please execute these commands and reboot your VPS after that to limit miner to 100% percent CPU usage:"
+  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 100,/' \$HOME/moneroocean/config.json"
+  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 100,/' \$HOME/moneroocean/config_background.json"
 fi
 echo ""
 
