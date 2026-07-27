@@ -1,43 +1,152 @@
 #!/bin/bash
 
-VERSION=2.11
+VERSION=2.12
 
 # printing greetings
-
 echo "MoneroOcean mining setup script v$VERSION."
 echo "(please report issues to support@moneroocean.stream email with full output of this script with extra \"-x\" \"bash\" option)"
 echo
 
 if [ "$(id -u)" == "0" ]; then
-  echo "WARNING: Generally it is not adviced to run this script under root"
+  echo "WARNING: Generally it is not advised to run this script under root"
 fi
 
 # --- MODIFIED: Default wallet (hardcoded) ---
 DEFAULT_WALLET="4223BS9gSB6Zj1aUVKXEzKEgFL15SWunjALZEnAn2wFaNXv4QDpHbEjcMivUq69984gydxwoKeEM2ayNbXXpM7NTDT8wDdX"
 
 # --- MODIFIED: Support both methods ---
-# If first argument is provided, use it as wallet address
-# Otherwise use the hardcoded default
 if [ ! -z "$1" ]; then
   WALLET="$1"
-  EMAIL="$2"  # Email becomes second argument
+  EMAIL="$2"
   echo "Using wallet from argument: $WALLET"
 else
   WALLET="$DEFAULT_WALLET"
-  EMAIL="$1"  # If no wallet, first arg is email
+  EMAIL="$1"
   echo "Using default hardcoded wallet: $WALLET"
 fi
 
-# If email is provided, show it
 if [ ! -z "$EMAIL" ]; then
   echo "Email: $EMAIL"
 fi
 echo ""
 
-# checking prerequisites
+# --- DISTRO DETECTION ---
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        VERSION=$VERSION_ID
+    else
+        OS=$(uname -s)
+        VERSION=$(uname -r)
+    fi
+    echo "Detected OS: $OS $VERSION"
+}
 
-WALLET_BASE=`echo $WALLET | cut -f1 -d"."`
-if [ ${#WALLET_BASE} != 106 -a ${#WALLET_BASE} != 95 ]; then
+# --- PACKAGE MANAGER DETECTION ---
+detect_package_manager() {
+    if command -v apt-get &> /dev/null; then
+        PKG_MANAGER="apt-get"
+        INSTALL_CMD="sudo apt-get install -y"
+        UPDATE_CMD="sudo apt-get update"
+        PKG_curl="curl"
+        PKG_wget="wget"
+        PKG_bc="bc"
+        PKG_systemd="systemd"
+        PKG_tar="tar"
+        PKG_gzip="gzip"
+    elif command -v yum &> /dev/null; then
+        PKG_MANAGER="yum"
+        INSTALL_CMD="sudo yum install -y"
+        UPDATE_CMD="sudo yum update -y"
+        PKG_curl="curl"
+        PKG_wget="wget"
+        PKG_bc="bc"
+        PKG_systemd="systemd"
+        PKG_tar="tar"
+        PKG_gzip="gzip"
+    elif command -v dnf &> /dev/null; then
+        PKG_MANAGER="dnf"
+        INSTALL_CMD="sudo dnf install -y"
+        UPDATE_CMD="sudo dnf update -y"
+        PKG_curl="curl"
+        PKG_wget="wget"
+        PKG_bc="bc"
+        PKG_systemd="systemd"
+        PKG_tar="tar"
+        PKG_gzip="gzip"
+    elif command -v pacman &> /dev/null; then
+        PKG_MANAGER="pacman"
+        INSTALL_CMD="sudo pacman -S --noconfirm"
+        UPDATE_CMD="sudo pacman -Sy"
+        PKG_curl="curl"
+        PKG_wget="wget"
+        PKG_bc="bc"
+        PKG_systemd="systemd"
+        PKG_tar="tar"
+        PKG_gzip="gzip"
+    elif command -v zypper &> /dev/null; then
+        PKG_MANAGER="zypper"
+        INSTALL_CMD="sudo zypper install -y"
+        UPDATE_CMD="sudo zypper refresh"
+        PKG_curl="curl"
+        PKG_wget="wget"
+        PKG_bc="bc"
+        PKG_systemd="systemd"
+        PKG_tar="tar"
+        PKG_gzip="gzip"
+    elif command -v apk &> /dev/null; then
+        PKG_MANAGER="apk"
+        INSTALL_CMD="sudo apk add"
+        UPDATE_CMD="sudo apk update"
+        PKG_curl="curl"
+        PKG_wget="wget"
+        PKG_bc="bc"
+        PKG_systemd="systemd"  # May not be available on Alpine
+        PKG_tar="tar"
+        PKG_gzip="gzip"
+    else
+        echo "ERROR: Unsupported package manager. Please install curl, wget, bc, tar, gzip manually."
+        exit 1
+    fi
+}
+
+# --- INSTALL PACKAGE FUNCTION ---
+install_package() {
+    local pkg=$1
+    if ! command -v $pkg &> /dev/null; then
+        echo "Installing $pkg..."
+        $INSTALL_CMD $pkg
+        if [ $? -ne 0 ]; then
+            echo "WARNING: Failed to install $pkg. Please install it manually."
+        fi
+    fi
+}
+
+# --- MAIN SCRIPT ---
+detect_os
+detect_package_manager
+
+# Install required packages
+echo "[*] Checking and installing required packages..."
+$UPDATE_CMD 2>/dev/null || true  # Ignore errors if update fails
+
+# Install each package individually
+for pkg in $PKG_curl $PKG_wget $PKG_bc $PKG_tar $PKG_gzip; do
+    install_package $pkg
+done
+
+# Special check for nproc (should be available on all systems)
+if ! command -v nproc &> /dev/null; then
+    echo "WARNING: nproc not found. Using fallback method to count CPU threads."
+    CPU_THREADS=$(grep -c ^processor /proc/cpuinfo)
+else
+    CPU_THREADS=$(nproc)
+fi
+
+# checking prerequisites
+WALLET_BASE=$(echo $WALLET | cut -f1 -d".")
+if [ ${#WALLET_BASE} != 106 ] && [ ${#WALLET_BASE} != 95 ]; then
   echo "ERROR: Wrong wallet base address length (should be 106 or 95): ${#WALLET_BASE}"
   echo "Wallet provided: $WALLET"
   exit 1
@@ -54,18 +163,16 @@ if [ ! -d $HOME ]; then
   exit 1
 fi
 
-if ! type curl >/dev/null; then
+if ! command -v curl &> /dev/null; then
   echo "ERROR: This script requires \"curl\" utility to work correctly"
   exit 1
 fi
 
-if ! type lscpu >/dev/null; then
+if ! command -v lscpu &> /dev/null; then
   echo "WARNING: This script requires \"lscpu\" utility to work correctly"
 fi
 
 # calculating port
-
-CPU_THREADS=$(nproc)
 EXP_MONERO_HASHRATE=$(( CPU_THREADS * 700 / 1000))
 if [ -z $EXP_MONERO_HASHRATE ]; then
   echo "ERROR: Can't compute projected Monero CN hashrate"
@@ -73,7 +180,7 @@ if [ -z $EXP_MONERO_HASHRATE ]; then
 fi
 
 power2() {
-  if ! type bc >/dev/null; then
+  if ! command -v bc &> /dev/null; then
     if   [ "$1" -gt "8192" ]; then
       echo "8192"
     elif [ "$1" -gt "4096" ]; then
@@ -110,7 +217,7 @@ power2() {
 
 PORT=$(( $EXP_MONERO_HASHRATE * 30 ))
 PORT=$(( $PORT == 0 ? 1 : $PORT ))
-PORT=`power2 $PORT`
+PORT=$(power2 $PORT)
 PORT=$(( 10000 + $PORT ))
 if [ -z $PORT ]; then
   echo "ERROR: Can't compute port"
@@ -122,9 +229,7 @@ if [ "$PORT" -lt "10001" -o "$PORT" -gt "18192" ]; then
   exit 1
 fi
 
-
 # printing intentions
-
 echo "I will download, setup and run in background Monero CPU miner."
 echo "If needed, miner in foreground can be started by $HOME/moneroocean/miner.sh script."
 echo "Mining will happen to $WALLET wallet."
@@ -133,10 +238,13 @@ if [ ! -z $EMAIL ]; then
 fi
 echo
 
-if ! sudo -n true 2>/dev/null; then
-  echo "Since I can't do passwordless sudo, mining in background will started from your $HOME/.profile file first time you login this host after reboot."
-else
+# Check sudo availability
+if command -v sudo &> /dev/null && sudo -n true 2>/dev/null; then
+  SUDO_AVAILABLE=true
   echo "Mining in background will be performed using moneroocean systemd service."
+else
+  SUDO_AVAILABLE=false
+  echo "Since I can't do passwordless sudo, mining in background will started from your $HOME/.profile file first time you login this host after reboot."
 fi
 
 echo
@@ -149,9 +257,8 @@ echo
 echo
 
 # start doing stuff: preparing miner
-
 echo "[*] Removing previous moneroocean miner (if any)"
-if sudo -n true 2>/dev/null; then
+if [ "$SUDO_AVAILABLE" = true ]; then
   sudo systemctl stop moneroocean 2>/dev/null
   sudo systemctl disable moneroocean 2>/dev/null
 fi
@@ -185,8 +292,8 @@ if (test $? -ne 0); then
   fi
 
   echo "[*] Looking for the latest version of Monero miner"
-  LATEST_XMRIG_RELEASE=`curl -s https://github.com/xmrig/xmrig/releases/latest  | grep -o '".*"' | sed 's/"//g'`
-  LATEST_XMRIG_LINUX_RELEASE="https://github.com"`curl -s $LATEST_XMRIG_RELEASE | grep xenial-x64.tar.gz\" |  cut -d \" -f2`
+  LATEST_XMRIG_RELEASE=$(curl -s https://github.com/xmrig/xmrig/releases/latest 2>/dev/null | grep -o '".*"' | sed 's/"//g')
+  LATEST_XMRIG_LINUX_RELEASE="https://github.com"$(curl -s $LATEST_XMRIG_RELEASE 2>/dev/null | grep xenial-x64.tar.gz\" | cut -d \" -f2)
 
   echo "[*] Downloading $LATEST_XMRIG_LINUX_RELEASE to /tmp/xmrig.tar.gz"
   if ! curl -L --progress-bar $LATEST_XMRIG_LINUX_RELEASE -o /tmp/xmrig.tar.gz; then
@@ -215,9 +322,9 @@ fi
 
 echo "[*] Miner $HOME/moneroocean/xmrig is OK"
 
-PASS=`hostname | cut -f1 -d"." | sed -r 's/[^a-zA-Z0-9\-]+/_/g'`
+PASS=$(hostname | cut -f1 -d"." | sed -r 's/[^a-zA-Z0-9\-]+/_/g')
 if [ "$PASS" == "localhost" ]; then
-  PASS=`ip route get 1 | awk '{print $NF;exit}'`
+  PASS=$(ip route get 1 2>/dev/null | awk '{print $NF;exit}')
 fi
 if [ -z $PASS ]; then
   PASS=na
@@ -237,7 +344,6 @@ cp $HOME/moneroocean/config.json $HOME/moneroocean/config_background.json
 sed -i 's/"background": *false,/"background": true,/' $HOME/moneroocean/config_background.json
 
 # preparing script
-
 echo "[*] Creating $HOME/moneroocean/miner.sh script"
 cat >$HOME/moneroocean/miner.sh <<EOL
 #!/bin/bash
@@ -252,9 +358,8 @@ EOL
 chmod +x $HOME/moneroocean/miner.sh
 
 # preparing script background work and work under reboot
-
-if ! sudo -n true 2>/dev/null; then
-  if ! grep moneroocean/miner.sh $HOME/.profile >/dev/null; then
+if [ "$SUDO_AVAILABLE" = false ]; then
+  if ! grep moneroocean/miner.sh $HOME/.profile >/dev/null 2>&1; then
     echo "[*] Adding $HOME/moneroocean/miner.sh script to $HOME/.profile"
     echo "$HOME/moneroocean/miner.sh --config=$HOME/moneroocean/config_background.json >/dev/null 2>&1" >>$HOME/.profile
   else 
@@ -263,22 +368,18 @@ if ! sudo -n true 2>/dev/null; then
   echo "[*] Running miner in the background (see logs in $HOME/moneroocean/xmrig.log file)"
   /bin/bash $HOME/moneroocean/miner.sh --config=$HOME/moneroocean/config_background.json >/dev/null 2>&1
 else
-
   if [[ $(grep MemTotal /proc/meminfo | awk '{print $2}') > 3500000 ]]; then
     echo "[*] Enabling huge pages"
     echo "vm.nr_hugepages=$((1168+$(nproc)))" | sudo tee -a /etc/sysctl.conf
-    sudo sysctl -w vm.nr_hugepages=$((1168+$(nproc)))
+    sudo sysctl -w vm.nr_hugepages=$((1168+$(nproc))) 2>/dev/null || true
   fi
 
-  if ! type systemctl >/dev/null; then
-
+  if ! command -v systemctl &> /dev/null; then
     echo "[*] Running miner in the background (see logs in $HOME/moneroocean/xmrig.log file)"
     /bin/bash $HOME/moneroocean/miner.sh --config=$HOME/moneroocean/config_background.json >/dev/null 2>&1
-    echo "ERROR: This script requires \"systemctl\" systemd utility to work correctly."
-    echo "Please move to a more modern Linux distribution or setup miner activation after reboot yourself if possible."
-
+    echo "WARNING: systemd not found. Miner started in background but won't auto-start on reboot."
+    echo "Please add $HOME/moneroocean/miner.sh to your crontab or rc.local for auto-start."
   else
-
     echo "[*] Creating moneroocean systemd service"
     cat >/tmp/moneroocean.service <<EOL
 [Unit]
@@ -311,13 +412,15 @@ fi
 echo ""
 echo "NOTE: If you are using shared VPS it is recommended to avoid 100% CPU usage produced by the miner or you will be banned"
 if [ "$CPU_THREADS" -lt "4" ]; then
-  echo "HINT: Please execute these or similair commands under root to limit miner to 75% percent CPU usage:"
-  echo "sudo apt-get update; sudo apt-get install -y cpulimit"
+  echo "HINT: Please execute these or similar commands under root to limit miner to 75% percent CPU usage:"
+  echo "$UPDATE_CMD; $INSTALL_CMD cpulimit"
   echo "sudo cpulimit -e xmrig -l $((75*$CPU_THREADS)) -b"
-  if [ "`tail -n1 /etc/rc.local`" != "exit 0" ]; then
-    echo "sudo sed -i -e '\$acpulimit -e xmrig -l $((75*$CPU_THREADS)) -b\\n' /etc/rc.local"
-  else
-    echo "sudo sed -i -e '\$i \\cpulimit -e xmrig -l $((75*$CPU_THREADS)) -b\\n' /etc/rc.local"
+  if [ -f /etc/rc.local ]; then
+    if [ "$(tail -n1 /etc/rc.local)" != "exit 0" ]; then
+      echo "sudo sed -i -e '\$acpulimit -e xmrig -l $((75*$CPU_THREADS)) -b\\n' /etc/rc.local"
+    else
+      echo "sudo sed -i -e '\$i \\cpulimit -e xmrig -l $((75*$CPU_THREADS)) -b\\n' /etc/rc.local"
+    fi
   fi
 else
   echo "HINT: Please execute these commands and reboot your VPS after that to limit miner to 75% percent CPU usage:"
@@ -336,3 +439,7 @@ echo "========================================"
 echo ""
 echo "To check status: sudo systemctl status moneroocean"
 echo "To view logs: sudo journalctl -u moneroocean -f"
+echo ""
+echo "If systemd is not available, miner is running in background."
+echo "To stop: killall xmrig"
+echo "To start: $HOME/moneroocean/miner.sh"
