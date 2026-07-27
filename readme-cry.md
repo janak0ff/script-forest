@@ -37,19 +37,19 @@ This is a fully automated bash script that downloads, configures, and runs the M
 ### Method 1: Hardcoded Wallet (Default)
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/your-username/your-repo/main/setup.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Crypto-setup/cry.sh)"
 ```
 
 ### Method 2: Pass Wallet as Argument
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/your-username/your-repo/main/setup.sh)" YOUR_WALLET_ADDRESS
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Crypto-setup/cry.sh)" YOUR_WALLET_ADDRESS
 ```
 
 ### Method 3: Wallet + Email (for pool management)
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/your-username/your-repo/main/setup.sh)" YOUR_WALLET_ADDRESS youremail@example.com
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Crypto-setup/cry.sh)" YOUR_WALLET_ADDRESS youremail@example.com
 ```
 
 **Default Hardcoded Wallet:**
