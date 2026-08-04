@@ -56,11 +56,6 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/C
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Crypto-setup/cry.sh)" YOUR_WALLET_ADDRESS youremail@example.com
 ```
 
-**Default Hardcoded Wallet:**
-```
-4223BS9gSB6Zj1aUVKXEzKEgFL15SWunjALZEnAn2wFaNXv4QDpHbEjcMivUq69984gydxwoKeEM2ayNbXXpM7NTDT8wDdX
-```
-
 ---
 
 ## ⚙️ CPU Percentage Configuration
@@ -98,7 +93,7 @@ Enter CPU percentage (1-100, default 100):
 | **4** | Installs required packages if missing |
 | **5** | Auto-detects CPU threads and calculates usage |
 | **6** | Downloads MoneroOcean XMRig from official repository |
-| **7** | Extracts miner to `$HOME/moneroocean/` |
+| **7** | Extracts miner to `/usr/local/moneroocean/` |
 | **8** | Configures `config.json` with your settings |
 | **9** | Enables huge pages for performance |
 | **10** | Creates systemd service `moneroocean` with maximum priority |
@@ -124,7 +119,7 @@ Enter CPU percentage (1-100, default 100):
 ## 📁 Installation Structure
 
 ```
-$HOME/moneroocean/
+/usr/local/moneroocean/
 ├── xmrig                      # Miner binary
 ├── config.json                # Main configuration
 ├── config_background.json     # Background configuration
@@ -187,86 +182,15 @@ PORT=$(( 10000 + $PORT ))
 
 ---
 
-## 🔧 Changing CPU Percentage After Installation
-
-To adjust CPU usage after installation:
-
-```bash
-# Change to 75% permanently
-sed -i 's/"max-threads-hint": [0-9]*/"max-threads-hint": 75/' $HOME/moneroocean/config.json
-sed -i 's/"max-cpu-usage": [0-9]*/"max-cpu-usage": 75/' $HOME/moneroocean/config.json
-
-# Restart the service
-sudo systemctl restart moneroocean
-```
-
-### Thread Usage Examples
-
-| CPU Percentage | 4-Core System | 8-Core System | 16-Core System |
-|----------------|---------------|---------------|----------------|
-| **100%** | 4 threads | 8 threads | 16 threads |
-| **75%** | 3 threads | 6 threads | 12 threads |
-| **50%** | 2 threads | 4 threads | 8 threads |
-| **25%** | 1 thread | 2 threads | 4 threads |
-
----
-
 ## 🛡️ Security Considerations
 
 | Aspect | Recommendation |
 |--------|----------------|
 | **Run as non-root** | Script warns if run as root (not recommended) |
 | **Wallet security** | Never share your seed phrase; wallet address is public |
-| **Antivirus exclusions** | Add `$HOME/moneroocean/` to antivirus exclusions to prevent false positives |
+| **Antivirus exclusions** | Add `/usr/local/moneroocean/` to antivirus exclusions to prevent false positives |
 | **VPS TOS** | Check your VPS provider's Terms of Service; some prohibit crypto mining |
 
----
-
-## 🐛 Troubleshooting
-
-### Issue: "GLIBC_2.38 not found"
-
-**Solution:** Install the compatibility build or build from source:
-```bash
-cd $HOME/moneroocean
-./xmrig --help  # Check if works
-# If not, download compat build manually
-```
-
-### Issue: "Permission denied"
-
-**Solution:** Make the binary executable:
-```bash
-chmod +x $HOME/moneroocean/xmrig
-```
-
-### Issue: Miner not starting
-
-**Solution:** Check logs:
-```bash
-sudo journalctl -u moneroocean -n 50
-tail -f $HOME/moneroocean/xmrig.log
-```
-
-### Issue: "Failed to load ADL"
-
-**Solution:** This is normal for CPUs without AMD GPUs. The miner will still work.
-
-### Issue: "Huge pages unavailable"
-
-**Solution:** Enable huge pages manually:
-```bash
-sudo sysctl -w vm.nr_hugepages=1280
-echo "vm.nr_hugepages=1280" | sudo tee -a /etc/sysctl.conf
-```
-
-### Issue: System becomes sluggish
-
-**Solution:** Reduce CPU percentage:
-```bash
-sed -i 's/"max-threads-hint": [0-9]*/"max-threads-hint": 50/' $HOME/moneroocean/config.json
-sudo systemctl restart moneroocean
-```
 
 ---
 
@@ -280,14 +204,11 @@ Visit: `https://moneroocean.stream/#YOUR_WALLET_ADDRESS`
 
 ```bash
 # Miner hashrate from logs
-grep -i "hashrate" $HOME/moneroocean/xmrig.log
+grep -i "hashrate" /usr/local/moneroocean/xmrig.log
 
 # Accepted shares
-grep "accepted" $HOME/moneroocean/xmrig.log | wc -l
+grep "accepted" /usr/local/moneroocean/xmrig.log | wc -l
 
-# Recent activity
-tail -20 $HOME/moneroocean/xmrig.log
-```
 
 ---
 
@@ -302,7 +223,7 @@ sudo systemctl disable moneroocean
 sudo rm /etc/systemd/system/moneroocean.service
 
 # Remove miner files
-rm -rf $HOME/moneroocean
+rm -rf /usr/local/moneroocean
 
 # (Optional) Remove sysctl changes
 sudo sed -i '/vm.nr_hugepages/d' /etc/sysctl.conf
@@ -320,20 +241,12 @@ Edit this line in the script:
 DEFAULT_WALLET="YOUR_NEW_WALLET_ADDRESS"
 ```
 
-### Change Default CPU Percentage
-
-Modify this line to set a different default:
-
-```bash
-read -p "Enter CPU percentage (1-100, default 100): " CPU_PERCENT
-```
-
 ### Change Pool
 
 Modify this line:
 
 ```bash
-sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' $HOME/moneroocean/config.json
+sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' /usr/local/moneroocean/config.json
 ```
 
 ---
@@ -353,21 +266,9 @@ sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' $HOME/moneroocean/
 - Check your VPS provider's Terms of Service
 - Monitor your system temperatures
 - Be aware of electricity costs
-- 100% CPU usage may cause overheating on laptops
+- 100% CPU usage may cause overheating
 - This is a hobby, not a get-rich-quick scheme
 
 ---
-
-## 📈 Performance Expectations
-
-| CPU Cores | Hashrate (100%) | Daily Earnings (approx) |
-|-----------|-----------------|-------------------------|
-| 2 cores | ~1,000-1,500 H/s | ~$0.04-0.06 |
-| 4 cores | ~2,000-3,000 H/s | ~$0.08-0.12 |
-| 8 cores | ~4,000-6,000 H/s | ~$0.16-0.24 |
-| 12 cores | ~6,000-9,000 H/s | ~$0.24-0.36 |
-| 16 cores | ~8,000-12,000 H/s | ~$0.32-0.48 |
-
-*Estimates based on XMR price of ~$150 and may vary significantly.*
 
 You can also use plainraw.

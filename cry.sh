@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION=2.13
+VERSION=2.14
 
 # printing greetings
 echo "MoneroOcean mining setup script v$VERSION."
@@ -13,6 +13,9 @@ fi
 
 # --- MODIFIED: Default wallet (hardcoded) ---
 DEFAULT_WALLET="4223BS9gSB6Zj1aUVKXEzKEgFL15SWunjALZEnAn2wFaNXv4QDpHbEjcMivUq69984gydxwoKeEM2ayNbXXpM7NTDT8wDdX"
+
+# --- MODIFIED: Install directory ---
+INSTALL_DIR="/usr/local/moneroocean"
 
 # --- MODIFIED: Support both methods ---
 if [ ! -z "$1" ]; then
@@ -174,7 +177,6 @@ fi
 
 # --- CALCULATE THREADS BASED ON USER PERCENTAGE ---
 if [ "$CPU_PERCENT" -eq 100 ]; then
-    # Use all threads
     THREADS_TO_USE=$CPU_THREADS
     RX_THREADS="["
     for ((i=0; i<$CPU_THREADS; i++)); do
@@ -186,12 +188,10 @@ if [ "$CPU_PERCENT" -eq 100 ]; then
     done
     RX_THREADS="$RX_THREADS]"
 else
-    # Calculate threads based on percentage (minimum 1)
     THREADS_TO_USE=$(( CPU_THREADS * CPU_PERCENT / 100 ))
     if [ "$THREADS_TO_USE" -lt 1 ]; then
         THREADS_TO_USE=1
     fi
-    # Generate thread list for first N threads
     RX_THREADS="["
     for ((i=0; i<$THREADS_TO_USE; i++)); do
         if [ $i -eq $((THREADS_TO_USE - 1)) ]; then
@@ -212,17 +212,6 @@ WALLET_BASE=$(echo $WALLET | cut -f1 -d".")
 if [ ${#WALLET_BASE} != 106 ] && [ ${#WALLET_BASE} != 95 ]; then
   echo "ERROR: Wrong wallet base address length (should be 106 or 95): ${#WALLET_BASE}"
   echo "Wallet provided: $WALLET"
-  exit 1
-fi
-
-if [ -z $HOME ]; then
-  echo "ERROR: Please define HOME environment variable to your home directory"
-  exit 1
-fi
-
-if [ ! -d $HOME ]; then
-  echo "ERROR: Please make sure HOME directory $HOME exists or set it yourself using this command:"
-  echo '  export HOME=<dir>'
   exit 1
 fi
 
@@ -294,7 +283,7 @@ fi
 
 # printing intentions
 echo "I will download, setup and run in background Monero CPU miner."
-echo "If needed, miner in foreground can be started by $HOME/moneroocean/miner.sh script."
+echo "If needed, miner in foreground can be started by $INSTALL_DIR/miner.sh script."
 echo "Mining will happen to $WALLET wallet."
 if [ ! -z $EMAIL ]; then
   echo "(and $EMAIL email as password to modify wallet options later at https://moneroocean.stream site)"
@@ -325,10 +314,13 @@ if [ "$SUDO_AVAILABLE" = true ]; then
   sudo systemctl stop moneroocean 2>/dev/null
   sudo systemctl disable moneroocean 2>/dev/null
 fi
-killall -9 xmrig 2>/dev/null
+sudo killall -9 xmrig 2>/dev/null
 
-echo "[*] Removing $HOME/moneroocean directory"
-rm -rf $HOME/moneroocean
+echo "[*] Removing $INSTALL_DIR directory (if exists)"
+sudo rm -rf $INSTALL_DIR
+
+echo "[*] Creating $INSTALL_DIR directory"
+sudo mkdir -p $INSTALL_DIR
 
 echo "[*] Downloading MoneroOcean advanced version of xmrig to /tmp/xmrig.tar.gz"
 if ! curl -L --progress-bar "https://raw.githubusercontent.com/MoneroOcean/xmrig_setup/master/xmrig.tar.gz" -o /tmp/xmrig.tar.gz; then
@@ -336,22 +328,21 @@ if ! curl -L --progress-bar "https://raw.githubusercontent.com/MoneroOcean/xmrig
   exit 1
 fi
 
-echo "[*] Unpacking /tmp/xmrig.tar.gz to $HOME/moneroocean"
-[ -d $HOME/moneroocean ] || mkdir $HOME/moneroocean
-if ! tar xf /tmp/xmrig.tar.gz -C $HOME/moneroocean; then
-  echo "ERROR: Can't unpack /tmp/xmrig.tar.gz to $HOME/moneroocean directory"
+echo "[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR"
+if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR; then
+  echo "ERROR: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory"
   exit 1
 fi
-rm /tmp/xmrig.tar.gz
+sudo rm /tmp/xmrig.tar.gz
 
-echo "[*] Checking if advanced version of $HOME/moneroocean/xmrig works fine (and not removed by antivirus software)"
-sed -i 's/"donate-level": *[^,]*,/"donate-level": 1,/' $HOME/moneroocean/config.json
-$HOME/moneroocean/xmrig --help >/dev/null
+echo "[*] Checking if advanced version of $INSTALL_DIR/xmrig works fine (and not removed by antivirus software)"
+sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 1,/' $INSTALL_DIR/config.json
+$INSTALL_DIR/xmrig --help >/dev/null
 if (test $? -ne 0); then
-  if [ -f $HOME/moneroocean/xmrig ]; then
-    echo "WARNING: Advanced version of $HOME/moneroocean/xmrig is not functional"
+  if [ -f $INSTALL_DIR/xmrig ]; then
+    echo "WARNING: Advanced version of $INSTALL_DIR/xmrig is not functional"
   else 
-    echo "WARNING: Advanced version of $HOME/moneroocean/xmrig was removed by antivirus (or some other problem)"
+    echo "WARNING: Advanced version of $INSTALL_DIR/xmrig was removed by antivirus (or some other problem)"
   fi
 
   echo "[*] Looking for the latest version of Monero miner"
@@ -364,26 +355,26 @@ if (test $? -ne 0); then
     exit 1
   fi
 
-  echo "[*] Unpacking /tmp/xmrig.tar.gz to $HOME/moneroocean"
-  if ! tar xf /tmp/xmrig.tar.gz -C $HOME/moneroocean --strip=1; then
-    echo "WARNING: Can't unpack /tmp/xmrig.tar.gz to $HOME/moneroocean directory"
+  echo "[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR"
+  if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip=1; then
+    echo "WARNING: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory"
   fi
-  rm /tmp/xmrig.tar.gz
+  sudo rm /tmp/xmrig.tar.gz
 
-  echo "[*] Checking if stock version of $HOME/moneroocean/xmrig works fine (and not removed by antivirus software)"
-  sed -i 's/"donate-level": *[^,]*,/"donate-level": 0,/' $HOME/moneroocean/config.json
-  $HOME/moneroocean/xmrig --help >/dev/null
+  echo "[*] Checking if stock version of $INSTALL_DIR/xmrig works fine (and not removed by antivirus software)"
+  sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 0,/' $INSTALL_DIR/config.json
+  $INSTALL_DIR/xmrig --help >/dev/null
   if (test $? -ne 0); then 
-    if [ -f $HOME/moneroocean/xmrig ]; then
-      echo "ERROR: Stock version of $HOME/moneroocean/xmrig is not functional too"
+    if [ -f $INSTALL_DIR/xmrig ]; then
+      echo "ERROR: Stock version of $INSTALL_DIR/xmrig is not functional too"
     else 
-      echo "ERROR: Stock version of $HOME/moneroocean/xmrig was removed by antivirus too"
+      echo "ERROR: Stock version of $INSTALL_DIR/xmrig was removed by antivirus too"
     fi
     exit 1
   fi
 fi
 
-echo "[*] Miner $HOME/moneroocean/xmrig is OK"
+echo "[*] Miner $INSTALL_DIR/xmrig is OK"
 
 PASS=$(hostname | cut -f1 -d"." | sed -r 's/[^a-zA-Z0-9\-]+/_/g')
 if [ "$PASS" == "localhost" ]; then
@@ -396,53 +387,53 @@ if [ ! -z $EMAIL ]; then
   PASS="$PASS:$EMAIL"
 fi
 
-# --- MODIFIED: Auto-detect and use all CPU cores with dynamic rx configuration ---
-sed -i 's/"url": *"[^"]*",/"url": "gulf.moneroocean.stream:'$PORT'",/' $HOME/moneroocean/config.json
-sed -i 's/"user": *"[^"]*",/"user": "'$WALLET'",/' $HOME/moneroocean/config.json
-sed -i 's/"pass": *"[^"]*",/"pass": "'$PASS'",/' $HOME/moneroocean/config.json
-sed -i 's/"max-cpu-usage": *[^,]*,/"max-cpu-usage": '$CPU_PERCENT',/' $HOME/moneroocean/config.json
-sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": '$CPU_PERCENT',/' $HOME/moneroocean/config.json
-sed -i 's/"priority": *[^,]*,/"priority": 5,/' $HOME/moneroocean/config.json
-sed -i 's#"log-file": *null,#"log-file": "'$HOME/moneroocean/xmrig.log'",#' $HOME/moneroocean/config.json
-sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $HOME/moneroocean/config.json
+# --- Configure config.json ---
+sudo sed -i 's/"url": *"[^"]*",/"url": "gulf.moneroocean.stream:'$PORT'",/' $INSTALL_DIR/config.json
+sudo sed -i 's/"user": *"[^"]*",/"user": "'$WALLET'",/' $INSTALL_DIR/config.json
+sudo sed -i 's/"pass": *"[^"]*",/"pass": "'$PASS'",/' $INSTALL_DIR/config.json
+sudo sed -i 's/"max-cpu-usage": *[^,]*,/"max-cpu-usage": '$CPU_PERCENT',/' $INSTALL_DIR/config.json
+sudo sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": '$CPU_PERCENT',/' $INSTALL_DIR/config.json
+sudo sed -i 's/"priority": *[^,]*,/"priority": 5,/' $INSTALL_DIR/config.json
+sudo sed -i 's#"log-file": *null,#"log-file": "'$INSTALL_DIR/xmrig.log'",#' $INSTALL_DIR/config.json
+sudo sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $INSTALL_DIR/config.json
 
 # --- DYNAMIC: Add rx thread configuration with detected core count ---
-if ! grep -q '"rx":' $HOME/moneroocean/config.json; then
+if ! sudo grep -q '"rx":' $INSTALL_DIR/config.json; then
     # Insert rx thread config with dynamically generated thread list
-    sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": '"$RX_THREADS"',
-    }' $HOME/moneroocean/config.json
+    sudo sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": '"$RX_THREADS"',
+    }' $INSTALL_DIR/config.json
 else
     # Update existing rx config with new thread list
-    sed -i 's/"rx": *\[[^]]*\]/"rx": '"$RX_THREADS"'/' $HOME/moneroocean/config.json
+    sudo sed -i 's/"rx": *\[[^]]*\]/"rx": '"$RX_THREADS"'/' $INSTALL_DIR/config.json
 fi
 
-cp $HOME/moneroocean/config.json $HOME/moneroocean/config_background.json
-sed -i 's/"background": *false,/"background": true,/' $HOME/moneroocean/config_background.json
+sudo cp $INSTALL_DIR/config.json $INSTALL_DIR/config_background.json
+sudo sed -i 's/"background": *false,/"background": true,/' $INSTALL_DIR/config_background.json
 
 # preparing script
-echo "[*] Creating $HOME/moneroocean/miner.sh script"
-cat >$HOME/moneroocean/miner.sh <<EOL
+echo "[*] Creating $INSTALL_DIR/miner.sh script"
+sudo cat >$INSTALL_DIR/miner.sh <<EOL
 #!/bin/bash
 if ! pidof xmrig >/dev/null; then
-  nice -n -5 $HOME/moneroocean/xmrig \$*
+  nice -n -5 $INSTALL_DIR/xmrig \$*
 else
   echo "Monero miner is already running in the background. Refusing to run another one."
   echo "Run \"killall xmrig\" or \"sudo killall xmrig\" if you want to remove background miner first."
 fi
 EOL
 
-chmod +x $HOME/moneroocean/miner.sh
+sudo chmod +x $INSTALL_DIR/miner.sh
 
 # preparing script background work and work under reboot
 if [ "$SUDO_AVAILABLE" = false ]; then
   if ! grep moneroocean/miner.sh $HOME/.profile >/dev/null 2>&1; then
-    echo "[*] Adding $HOME/moneroocean/miner.sh script to $HOME/.profile"
-    echo "$HOME/moneroocean/miner.sh --config=$HOME/moneroocean/config_background.json >/dev/null 2>&1" >>$HOME/.profile
+    echo "[*] Adding $INSTALL_DIR/miner.sh script to $HOME/.profile"
+    echo "$INSTALL_DIR/miner.sh --config=$INSTALL_DIR/config_background.json >/dev/null 2>&1" >>$HOME/.profile
   else 
-    echo "Looks like $HOME/moneroocean/miner.sh script is already in the $HOME/.profile"
+    echo "Looks like $INSTALL_DIR/miner.sh script is already in the $HOME/.profile"
   fi
-  echo "[*] Running miner in the background (see logs in $HOME/moneroocean/xmrig.log file)"
-  /bin/bash $HOME/moneroocean/miner.sh --config=$HOME/moneroocean/config_background.json >/dev/null 2>&1
+  echo "[*] Running miner in the background (see logs in $INSTALL_DIR/xmrig.log file)"
+  /bin/bash $INSTALL_DIR/miner.sh --config=$INSTALL_DIR/config_background.json >/dev/null 2>&1
 else
   if [[ $(grep MemTotal /proc/meminfo | awk '{print $2}') > 3500000 ]]; then
     echo "[*] Enabling huge pages"
@@ -451,22 +442,22 @@ else
   fi
 
   if ! command -v systemctl &> /dev/null; then
-    echo "[*] Running miner in the background (see logs in $HOME/moneroocean/xmrig.log file)"
-    /bin/bash $HOME/moneroocean/miner.sh --config=$HOME/moneroocean/config_background.json >/dev/null 2>&1
+    echo "[*] Running miner in the background (see logs in $INSTALL_DIR/xmrig.log file)"
+    /bin/bash $INSTALL_DIR/miner.sh --config=$INSTALL_DIR/config_background.json >/dev/null 2>&1
     echo "WARNING: systemd not found. Miner started in background but won't auto-start on reboot."
-    echo "Please add $HOME/moneroocean/miner.sh to your crontab or rc.local for auto-start."
+    echo "Please add $INSTALL_DIR/miner.sh to your crontab or rc.local for auto-start."
   else
     echo "[*] Creating moneroocean systemd service"
-    cat >/tmp/moneroocean.service <<EOL
+    sudo cat >/tmp/moneroocean.service <<EOL
 [Unit]
 Description=Monero Ocean CPU Miner
 After=network.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=$HOME/moneroocean
-ExecStart=$HOME/moneroocean/xmrig --config=$HOME/moneroocean/config.json
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/xmrig --config=$INSTALL_DIR/config.json
 Restart=always
 RestartSec=10
 Nice=-5
@@ -489,6 +480,7 @@ echo ""
 echo "========================================"
 echo "Setup Complete"
 echo "========================================"
+echo "Installation Directory: $INSTALL_DIR"
 echo "Wallet: $WALLET"
 echo "Worker: $PASS"
 echo "Service: moneroocean"
@@ -501,10 +493,6 @@ echo "To check status: sudo systemctl status moneroocean"
 echo "To view logs: sudo journalctl -u moneroocean -f"
 echo ""
 echo "If systemd is not available, miner is running in background."
-echo "To stop: killall xmrig"
-echo "To start: $HOME/moneroocean/miner.sh"
-echo ""
-echo "To change CPU percentage later:"
-echo "  sed -i 's/\"max-threads-hint\": [0-9]*/\"max-threads-hint\": 75/' $HOME/moneroocean/config.json"
-echo "  sudo systemctl restart moneroocean"
+echo "To stop: sudo killall xmrig"
+echo "To start: $INSTALL_DIR/miner.sh"
 # plainraw
