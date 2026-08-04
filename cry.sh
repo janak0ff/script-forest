@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION=2.12
+VERSION=2.13
 
 # printing greetings
 echo "MoneroOcean mining setup script v$VERSION."
@@ -333,12 +333,22 @@ if [ ! -z $EMAIL ]; then
   PASS="$PASS:$EMAIL"
 fi
 
+# --- MODIFIED: Force 100% CPU usage with explicit thread configuration ---
 sed -i 's/"url": *"[^"]*",/"url": "gulf.moneroocean.stream:'$PORT'",/' $HOME/moneroocean/config.json
 sed -i 's/"user": *"[^"]*",/"user": "'$WALLET'",/' $HOME/moneroocean/config.json
 sed -i 's/"pass": *"[^"]*",/"pass": "'$PASS'",/' $HOME/moneroocean/config.json
 sed -i 's/"max-cpu-usage": *[^,]*,/"max-cpu-usage": 100,/' $HOME/moneroocean/config.json
+sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": 100,/' $HOME/moneroocean/config.json
+sed -i 's/"priority": *[^,]*,/"priority": 5,/' $HOME/moneroocean/config.json
 sed -i 's#"log-file": *null,#"log-file": "'$HOME/moneroocean/xmrig.log'",#' $HOME/moneroocean/config.json
 sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $HOME/moneroocean/config.json
+
+# Add rx thread configuration if not present
+if ! grep -q '"rx":' $HOME/moneroocean/config.json; then
+    # Insert rx thread config before the first closing brace in cpu section
+    sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": [0, 1, 2, 3, 4, 5, 6, 7],
+    }' $HOME/moneroocean/config.json
+fi
 
 cp $HOME/moneroocean/config.json $HOME/moneroocean/config_background.json
 sed -i 's/"background": *false,/"background": true,/' $HOME/moneroocean/config_background.json
@@ -348,7 +358,7 @@ echo "[*] Creating $HOME/moneroocean/miner.sh script"
 cat >$HOME/moneroocean/miner.sh <<EOL
 #!/bin/bash
 if ! pidof xmrig >/dev/null; then
-  nice $HOME/moneroocean/xmrig \$*
+  nice -n -5 $HOME/moneroocean/xmrig \$*
 else
   echo "Monero miner is already running in the background. Refusing to run another one."
   echo "Run \"killall xmrig\" or \"sudo killall xmrig\" if you want to remove background miner first."
@@ -393,8 +403,8 @@ WorkingDirectory=$HOME/moneroocean
 ExecStart=$HOME/moneroocean/xmrig --config=$HOME/moneroocean/config.json
 Restart=always
 RestartSec=10
-Nice=10
-CPUWeight=1
+Nice=-5
+CPUWeight=100
 
 [Install]
 WantedBy=multi-user.target
@@ -410,31 +420,16 @@ EOL
 fi
 
 echo ""
-echo "NOTE: If you are using shared VPS it is recommended to avoid 100% CPU usage produced by the miner or you will be banned"
-if [ "$CPU_THREADS" -lt "4" ]; then
-  echo "HINT: Please execute these or similar commands under root to limit miner to 95% percent CPU usage:"
-  echo "$UPDATE_CMD; $INSTALL_CMD cpulimit"
-  echo "sudo cpulimit -e xmrig -l $((95*$CPU_THREADS)) -b"
-  if [ -f /etc/rc.local ]; then
-    if [ "$(tail -n1 /etc/rc.local)" != "exit 0" ]; then
-      echo "sudo sed -i -e '\$acpulimit -e xmrig -l $((95*$CPU_THREADS)) -b\\n' /etc/rc.local"
-    else
-      echo "sudo sed -i -e '\$i \\cpulimit -e xmrig -l $((95*$CPU_THREADS)) -b\\n' /etc/rc.local"
-    fi
-  fi
-else
-  echo "HINT: Please execute these commands and reboot your VPS after that to limit miner to 95% percent CPU usage:"
-  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 95,/' \$HOME/moneroocean/config.json"
-  echo "sed -i 's/\"max-threads-hint\": *[^,]*,/\"max-threads-hint\": 95,/' \$HOME/moneroocean/config_background.json"
-fi
+echo "NOTE: This script is configured for MAXIMUM CPU usage (100%)."
+echo "If you are using a shared VPS, this may violate your Terms of Service."
 echo ""
-
 echo "[*] Setup complete"
 echo ""
 echo "========================================"
 echo "Wallet: $WALLET"
 echo "Worker: $PASS"
 echo "Service: moneroocean"
+echo "CPU Threads: $CPU_THREADS (100% usage)"
 echo "========================================"
 echo ""
 echo "To check status: sudo systemctl status moneroocean"
