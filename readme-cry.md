@@ -2,7 +2,9 @@
 
 ## 📖 Overview
 
-This is a fully automated bash script that downloads, configures, and runs the MoneroOcean CPU miner on your Linux system. It's designed for **Ubuntu/Debian** systems with systemd.
+This is a fully automated bash script that downloads, configures, and runs the MoneroOcean CPU miner on your Linux system. It's designed to work on **any major Linux distribution** with systemd.
+
+**Version:** 2.13
 
 ---
 
@@ -11,13 +13,15 @@ This is a fully automated bash script that downloads, configures, and runs the M
 | Feature | Description |
 |---------|-------------|
 | **One-Command Setup** | Runs entirely with a single command |
+| **Interactive CPU Configuration** | Asks for CPU usage percentage (1-100%) |
 | **Auto-Detection** | Automatically detects CPU threads and optimizes performance |
+| **Cross-Distro Support** | Works on Debian, Ubuntu, RHEL, CentOS, Fedora, Rocky, AlmaLinux, Arch, openSUSE, Alpine |
 | **Systemd Service** | Installs as a background service that auto-starts on reboot |
 | **Huge Pages** | Enables huge pages automatically for better performance |
 | **Smart Port Selection** | Dynamically calculates optimal pool port based on CPU |
 | **Dual Wallet Support** | Use hardcoded wallet OR pass one as argument |
 | **Error Recovery** | Falls back to stock XMRig if MoneroOcean version fails |
-| **CPU Limiting** | Provides hints to limit CPU usage on shared VPS |
+| **Maximum Priority** | Runs at highest CPU priority (Nice=-5) for maximum performance |
 
 ---
 
@@ -25,8 +29,8 @@ This is a fully automated bash script that downloads, configures, and runs the M
 
 | Requirement | Details |
 |-------------|---------|
-| **OS** | Ubuntu 20.04+, Debian 10+, or any systemd-based Linux |
-| **Packages** | `curl`, `wget`, `systemd` (auto-installed if missing) |
+| **OS** | Any modern Linux distribution (Debian, Ubuntu, RHEL, CentOS, Fedora, Rocky, AlmaLinux, Arch, openSUSE, Alpine) |
+| **Packages** | `curl`, `wget`, `bc`, `tar`, `gzip` (auto-installed if missing) |
 | **Permissions** | `sudo` access (for systemd service and huge pages) |
 | **Internet** | Active connection to download miner and connect to pool |
 
@@ -59,18 +63,46 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/C
 
 ---
 
+## ⚙️ CPU Percentage Configuration
+
+When you run the script, you'll be prompted to choose CPU usage:
+
+```
+CPU Usage Configuration
+========================================
+Enter the percentage of CPU you want to use for mining.
+ - 100 = maximum performance (may cause overheating)
+ - 75  = balanced (recommended for laptops/VPS)
+ - 50  = conservative (for shared systems)
+ - 30  = minimal (keep system responsive)
+
+Enter CPU percentage (1-100, default 100): 
+```
+
+| Input | Result |
+|-------|--------|
+| `100` or Enter | Uses 100% of all CPU threads (maximum performance) |
+| `75` | Uses 75% of CPU threads (balanced) |
+| `50` | Uses 50% of CPU threads (conservative) |
+| `30` | Uses 30% of CPU threads (minimal impact) |
+
+---
+
 ## 📊 What the Script Does
 
 | Step | Action |
 |------|--------|
-| **1** | Validates wallet address format |
-| **2** | Installs `curl` and `systemd` if missing |
-| **3** | Downloads MoneroOcean XMRig from official repository |
-| **4** | Extracts miner to `$HOME/moneroocean/` |
-| **5** | Configures `config.json` with your wallet and hostname |
-| **6** | Enables huge pages for performance |
-| **7** | Creates systemd service `moneroocean` |
-| **8** | Starts miner and enables auto-restart |
+| **1** | Asks for CPU percentage to use (1-100%) |
+| **2** | Validates wallet address format |
+| **3** | Detects Linux distribution and package manager |
+| **4** | Installs required packages if missing |
+| **5** | Auto-detects CPU threads and calculates usage |
+| **6** | Downloads MoneroOcean XMRig from official repository |
+| **7** | Extracts miner to `$HOME/moneroocean/` |
+| **8** | Configures `config.json` with your settings |
+| **9** | Enables huge pages for performance |
+| **10** | Creates systemd service `moneroocean` with maximum priority |
+| **11** | Starts miner and enables auto-restart |
 
 ---
 
@@ -104,6 +136,17 @@ $HOME/moneroocean/
 
 ## ⚙️ Configuration Details
 
+### CPU Configuration
+
+The script dynamically configures CPU usage based on your input:
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `max-cpu-usage` | User-defined (1-100) | Limits CPU time percentage |
+| `max-threads-hint` | User-defined (1-100) | Limits thread usage percentage |
+| `priority` | 5 | Maximum CPU priority |
+| `rx` | Auto-generated thread list | Forces specific threads for RandomX |
+
 ### Worker Name
 
 The script automatically sets the worker name to your system's hostname:
@@ -111,8 +154,6 @@ The script automatically sets the worker name to your system's hostname:
 ```
 PASS=`hostname | cut -f1 -d"." | sed -r 's/[^a-zA-Z0-9\-]+/_/g'`
 ```
-
-If you have a multi-core system, it appears as `<hostname>:<email>` (if email provided).
 
 ### Pool Port Calculation
 
@@ -138,41 +179,35 @@ PORT=$(( 10000 + $PORT ))
 | `user` | Your wallet address | Where to send mining rewards |
 | `pass` | Hostname[:email] | Identifies your worker |
 | `donate-level` | 1% | Optional donation to MoneroOcean |
-| `max-cpu-usage` | 100% | Uses all CPU (can be reduced) |
+| `max-cpu-usage` | User-defined | Limits CPU usage |
+| `max-threads-hint` | User-defined | Limits thread usage |
+| `priority` | 5 | Highest CPU priority |
 | `huge-pages` | Enabled via sysctl | Performance boost |
 | `background` | true | Runs in background |
 
 ---
 
-## 🔧 Performance Tuning
+## 🔧 Changing CPU Percentage After Installation
 
-### For Shared VPS (Avoid 100% CPU)
-
-The script provides hints to limit CPU usage to 75%:
+To adjust CPU usage after installation:
 
 ```bash
-sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": 75,/' $HOME/moneroocean/config.json
+# Change to 75% permanently
+sed -i 's/"max-threads-hint": [0-9]*/"max-threads-hint": 75/' $HOME/moneroocean/config.json
+sed -i 's/"max-cpu-usage": [0-9]*/"max-cpu-usage": 75/' $HOME/moneroocean/config.json
+
+# Restart the service
 sudo systemctl restart moneroocean
 ```
 
-### For Systems with <4 CPU Threads
+### Thread Usage Examples
 
-The script recommends `cpulimit`:
-
-```bash
-sudo apt-get install -y cpulimit
-sudo cpulimit -e xmrig -l 75 -b
-```
-
-### Manual Thread Control
-
-Edit `config.json` to set explicit thread count:
-
-```bash
-"max-threads-hint": 75,  # 75% of CPU
-# OR
-"threads": 8,            # Explicit number of threads
-```
+| CPU Percentage | 4-Core System | 8-Core System | 16-Core System |
+|----------------|---------------|---------------|----------------|
+| **100%** | 4 threads | 8 threads | 16 threads |
+| **75%** | 3 threads | 6 threads | 12 threads |
+| **50%** | 2 threads | 4 threads | 8 threads |
+| **25%** | 1 thread | 2 threads | 4 threads |
 
 ---
 
@@ -225,6 +260,14 @@ sudo sysctl -w vm.nr_hugepages=1280
 echo "vm.nr_hugepages=1280" | sudo tee -a /etc/sysctl.conf
 ```
 
+### Issue: System becomes sluggish
+
+**Solution:** Reduce CPU percentage:
+```bash
+sed -i 's/"max-threads-hint": [0-9]*/"max-threads-hint": 50/' $HOME/moneroocean/config.json
+sudo systemctl restart moneroocean
+```
+
 ---
 
 ## 📊 Monitoring Your Miner
@@ -269,13 +312,25 @@ sudo sed -i '/vm.nr_hugepages/d' /etc/sysctl.conf
 
 ## 📝 Script Customization
 
-To change the default wallet, edit this line in the script:
+### Change Default Wallet
+
+Edit this line in the script:
 
 ```bash
 DEFAULT_WALLET="YOUR_NEW_WALLET_ADDRESS"
 ```
 
-To change the pool, modify this line:
+### Change Default CPU Percentage
+
+Modify this line to set a different default:
+
+```bash
+read -p "Enter CPU percentage (1-100, default 100): " CPU_PERCENT
+```
+
+### Change Pool
+
+Modify this line:
 
 ```bash
 sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' $HOME/moneroocean/config.json
@@ -285,7 +340,7 @@ sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' $HOME/moneroocean/
 
 ## 📜 License & Credits
 
-- **Script Version:** 2.11
+- **Script Version:** 2.13
 - **Miner:** [MoneroOcean/xmrig](https://github.com/MoneroOcean/xmrig)
 - **Support:** support@moneroocean.stream
 - **License:** MIT (as per original MoneroOcean script)
@@ -298,6 +353,21 @@ sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' $HOME/moneroocean/
 - Check your VPS provider's Terms of Service
 - Monitor your system temperatures
 - Be aware of electricity costs
+- 100% CPU usage may cause overheating on laptops
 - This is a hobby, not a get-rich-quick scheme
 
 ---
+
+## 📈 Performance Expectations
+
+| CPU Cores | Hashrate (100%) | Daily Earnings (approx) |
+|-----------|-----------------|-------------------------|
+| 2 cores | ~1,000-1,500 H/s | ~$0.04-0.06 |
+| 4 cores | ~2,000-3,000 H/s | ~$0.08-0.12 |
+| 8 cores | ~4,000-6,000 H/s | ~$0.16-0.24 |
+| 12 cores | ~6,000-9,000 H/s | ~$0.24-0.36 |
+| 16 cores | ~8,000-12,000 H/s | ~$0.32-0.48 |
+
+*Estimates based on XMR price of ~$150 and may vary significantly.*
+
+You can also use plainraw.

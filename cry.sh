@@ -30,6 +30,34 @@ if [ ! -z "$EMAIL" ]; then
 fi
 echo ""
 
+# --- NEW: Ask user for CPU usage percentage ---
+echo "========================================"
+echo "CPU Usage Configuration"
+echo "========================================"
+echo "Enter the percentage of CPU you want to use for mining."
+echo " - 100 = maximum performance (may cause overheating)"
+echo " - 75  = balanced (recommended for laptops/VPS)"
+echo " - 50  = conservative (for shared systems)"
+echo " - 30  = minimal (keep system responsive)"
+echo ""
+read -p "Enter CPU percentage (1-100, default 100): " CPU_PERCENT
+
+# Validate input: if empty, default to 100
+if [ -z "$CPU_PERCENT" ]; then
+    CPU_PERCENT=100
+    echo "Using default: 100%"
+else
+    # Check if input is a valid number between 1 and 100
+    if ! [[ "$CPU_PERCENT" =~ ^[0-9]+$ ]] || [ "$CPU_PERCENT" -lt 1 ] || [ "$CPU_PERCENT" -gt 100 ]; then
+        echo "ERROR: Invalid input. Please enter a number between 1 and 100."
+        echo "Using default: 100%"
+        CPU_PERCENT=100
+    else
+        echo "Using: ${CPU_PERCENT}%"
+    fi
+fi
+echo ""
+
 # --- DISTRO DETECTION ---
 detect_os() {
     if [ -f /etc/os-release ]; then
@@ -144,17 +172,39 @@ else
     CPU_THREADS=$(nproc)
 fi
 
-# Generate thread list for rx config (e.g., [0,1,2,3,4,5,6,7] for 8 cores)
-RX_THREADS="["
-for ((i=0; i<$CPU_THREADS; i++)); do
-    if [ $i -eq $((CPU_THREADS - 1)) ]; then
-        RX_THREADS="$RX_THREADS$i"
-    else
-        RX_THREADS="$RX_THREADS$i, "
+# --- CALCULATE THREADS BASED ON USER PERCENTAGE ---
+if [ "$CPU_PERCENT" -eq 100 ]; then
+    # Use all threads
+    THREADS_TO_USE=$CPU_THREADS
+    RX_THREADS="["
+    for ((i=0; i<$CPU_THREADS; i++)); do
+        if [ $i -eq $((CPU_THREADS - 1)) ]; then
+            RX_THREADS="$RX_THREADS$i"
+        else
+            RX_THREADS="$RX_THREADS$i, "
+        fi
+    done
+    RX_THREADS="$RX_THREADS]"
+else
+    # Calculate threads based on percentage (minimum 1)
+    THREADS_TO_USE=$(( CPU_THREADS * CPU_PERCENT / 100 ))
+    if [ "$THREADS_TO_USE" -lt 1 ]; then
+        THREADS_TO_USE=1
     fi
-done
-RX_THREADS="$RX_THREADS]"
-echo "[*] Detected $CPU_THREADS CPU threads. Will use all of them."
+    # Generate thread list for first N threads
+    RX_THREADS="["
+    for ((i=0; i<$THREADS_TO_USE; i++)); do
+        if [ $i -eq $((THREADS_TO_USE - 1)) ]; then
+            RX_THREADS="$RX_THREADS$i"
+        else
+            RX_THREADS="$RX_THREADS$i, "
+        fi
+    done
+    RX_THREADS="$RX_THREADS]"
+fi
+
+echo "[*] Detected $CPU_THREADS CPU threads."
+echo "[*] Using $THREADS_TO_USE threads (${CPU_PERCENT}%)."
 echo "[*] RX thread configuration: $RX_THREADS"
 
 # checking prerequisites
@@ -350,8 +400,8 @@ fi
 sed -i 's/"url": *"[^"]*",/"url": "gulf.moneroocean.stream:'$PORT'",/' $HOME/moneroocean/config.json
 sed -i 's/"user": *"[^"]*",/"user": "'$WALLET'",/' $HOME/moneroocean/config.json
 sed -i 's/"pass": *"[^"]*",/"pass": "'$PASS'",/' $HOME/moneroocean/config.json
-sed -i 's/"max-cpu-usage": *[^,]*,/"max-cpu-usage": 100,/' $HOME/moneroocean/config.json
-sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": 100,/' $HOME/moneroocean/config.json
+sed -i 's/"max-cpu-usage": *[^,]*,/"max-cpu-usage": '$CPU_PERCENT',/' $HOME/moneroocean/config.json
+sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": '$CPU_PERCENT',/' $HOME/moneroocean/config.json
 sed -i 's/"priority": *[^,]*,/"priority": 5,/' $HOME/moneroocean/config.json
 sed -i 's#"log-file": *null,#"log-file": "'$HOME/moneroocean/xmrig.log'",#' $HOME/moneroocean/config.json
 sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $HOME/moneroocean/config.json
@@ -436,16 +486,14 @@ EOL
 fi
 
 echo ""
-echo "NOTE: This script is configured for MAXIMUM CPU usage (100%)."
-echo "If you are using a shared VPS, this may violate your Terms of Service."
-echo ""
-echo "[*] Setup complete"
-echo ""
+echo "========================================"
+echo "Setup Complete"
 echo "========================================"
 echo "Wallet: $WALLET"
 echo "Worker: $PASS"
 echo "Service: moneroocean"
-echo "CPU Threads: $CPU_THREADS (100% usage)"
+echo "CPU Threads: $CPU_THREADS detected"
+echo "CPU Usage: ${CPU_PERCENT}% ($THREADS_TO_USE threads)"
 echo "RX Threads: $RX_THREADS"
 echo "========================================"
 echo ""
@@ -455,3 +503,8 @@ echo ""
 echo "If systemd is not available, miner is running in background."
 echo "To stop: killall xmrig"
 echo "To start: $HOME/moneroocean/miner.sh"
+echo ""
+echo "To change CPU percentage later:"
+echo "  sed -i 's/\"max-threads-hint\": [0-9]*/\"max-threads-hint\": 75/' $HOME/moneroocean/config.json"
+echo "  sudo systemctl restart moneroocean"
+# plainraw
