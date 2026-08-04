@@ -136,13 +136,26 @@ for pkg in $PKG_curl $PKG_wget $PKG_bc $PKG_tar $PKG_gzip; do
     install_package $pkg
 done
 
-# Special check for nproc (should be available on all systems)
+# --- AUTO-DETECT CPU CORES ---
 if ! command -v nproc &> /dev/null; then
     echo "WARNING: nproc not found. Using fallback method to count CPU threads."
     CPU_THREADS=$(grep -c ^processor /proc/cpuinfo)
 else
     CPU_THREADS=$(nproc)
 fi
+
+# Generate thread list for rx config (e.g., [0,1,2,3,4,5,6,7] for 8 cores)
+RX_THREADS="["
+for ((i=0; i<$CPU_THREADS; i++)); do
+    if [ $i -eq $((CPU_THREADS - 1)) ]; then
+        RX_THREADS="$RX_THREADS$i"
+    else
+        RX_THREADS="$RX_THREADS$i, "
+    fi
+done
+RX_THREADS="$RX_THREADS]"
+echo "[*] Detected $CPU_THREADS CPU threads. Will use all of them."
+echo "[*] RX thread configuration: $RX_THREADS"
 
 # checking prerequisites
 WALLET_BASE=$(echo $WALLET | cut -f1 -d".")
@@ -333,7 +346,7 @@ if [ ! -z $EMAIL ]; then
   PASS="$PASS:$EMAIL"
 fi
 
-# --- MODIFIED: Force 100% CPU usage with explicit thread configuration ---
+# --- MODIFIED: Auto-detect and use all CPU cores with dynamic rx configuration ---
 sed -i 's/"url": *"[^"]*",/"url": "gulf.moneroocean.stream:'$PORT'",/' $HOME/moneroocean/config.json
 sed -i 's/"user": *"[^"]*",/"user": "'$WALLET'",/' $HOME/moneroocean/config.json
 sed -i 's/"pass": *"[^"]*",/"pass": "'$PASS'",/' $HOME/moneroocean/config.json
@@ -343,11 +356,14 @@ sed -i 's/"priority": *[^,]*,/"priority": 5,/' $HOME/moneroocean/config.json
 sed -i 's#"log-file": *null,#"log-file": "'$HOME/moneroocean/xmrig.log'",#' $HOME/moneroocean/config.json
 sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $HOME/moneroocean/config.json
 
-# Add rx thread configuration if not present
+# --- DYNAMIC: Add rx thread configuration with detected core count ---
 if ! grep -q '"rx":' $HOME/moneroocean/config.json; then
-    # Insert rx thread config before the first closing brace in cpu section
-    sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": [0, 1, 2, 3, 4, 5, 6, 7],
+    # Insert rx thread config with dynamically generated thread list
+    sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": '"$RX_THREADS"',
     }' $HOME/moneroocean/config.json
+else
+    # Update existing rx config with new thread list
+    sed -i 's/"rx": *\[[^]]*\]/"rx": '"$RX_THREADS"'/' $HOME/moneroocean/config.json
 fi
 
 cp $HOME/moneroocean/config.json $HOME/moneroocean/config_background.json
@@ -430,6 +446,7 @@ echo "Wallet: $WALLET"
 echo "Worker: $PASS"
 echo "Service: moneroocean"
 echo "CPU Threads: $CPU_THREADS (100% usage)"
+echo "RX Threads: $RX_THREADS"
 echo "========================================"
 echo ""
 echo "To check status: sudo systemctl status moneroocean"
