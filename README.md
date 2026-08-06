@@ -1,3 +1,14 @@
+
+## zimbra password reset 
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/zimbra-email-pass-reset/pass-reset.sh)"
+
+
+---
+
+
+
 ## Zsh Setup one line command
 
 ```bash
