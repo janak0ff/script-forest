@@ -7,15 +7,13 @@ generate_password() {
 }
 
 echo "========================================"
-echo "     Zimbra's Password Reset Tool"
+echo "Zimbra's Password Reset Tool"
 echo "========================================"
 read -p "Enter user email: " USER_EMAIL
 
 # Check if user exists
 if ! zmprov -l ga "$USER_EMAIL" &>/dev/null; then
     echo "ERROR: User '$USER_EMAIL' does not exist"
-    echo ""
-    echo "Tip: Use 'zmprov -l gaa' to list all users"
     exit 1
 fi
 
@@ -29,18 +27,12 @@ read -p "Choose (1 or 2): " PASS_CHOICE
 # Set password based on user choice
 if [[ "$PASS_CHOICE" == "2" ]]; then
     echo ""
-    read -s -p "Enter new password: " NEW_PASSWORD
-    echo ""
-    read -s -p "Confirm password: " CONFIRM_PASSWORD
+    read -p "Enter new password: " NEW_PASSWORD
     echo ""
     
-    # Check if passwords match and not empty
+    # Check if password is empty
     if [[ -z "$NEW_PASSWORD" ]]; then
         echo "No password entered. Using auto-generated password..."
-        NEW_PASSWORD=$(generate_password)
-    elif [[ "$NEW_PASSWORD" != "$CONFIRM_PASSWORD" ]]; then
-        echo "ERROR: Passwords do not match"
-        echo "Using auto-generated password instead..."
         NEW_PASSWORD=$(generate_password)
     fi
 else
