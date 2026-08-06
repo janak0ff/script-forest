@@ -36,10 +36,10 @@ if [[ "$PASS_CHOICE" == "2" ]]; then
     
     # Check if passwords match and not empty
     if [[ -z "$NEW_PASSWORD" ]]; then
-        echo "⚠️ No password entered. Using auto-generated password..."
+        echo "No password entered. Using auto-generated password..."
         NEW_PASSWORD=$(generate_password)
     elif [[ "$NEW_PASSWORD" != "$CONFIRM_PASSWORD" ]]; then
-        echo "❌ ERROR: Passwords do not match"
+        echo "ERROR: Passwords do not match"
         echo "Using auto-generated password instead..."
         NEW_PASSWORD=$(generate_password)
     fi
@@ -57,21 +57,21 @@ if zmprov -l sp "$USER_EMAIL" "$NEW_PASSWORD"; then
     # Set force change flag based on user input
     if [[ "$FORCE_CHANGE" == "y" || "$FORCE_CHANGE" == "Y" ]]; then
         zmprov -l ma "$USER_EMAIL" zimbraPasswordMustChange TRUE
-        STATUS="🔒 Must change on next login"
+        STATUS="Must change on next login"
     else
         zmprov -l ma "$USER_EMAIL" zimbraPasswordMustChange FALSE
-        STATUS="🔓 Can login with current password"
+        STATUS="Can login with current password"
     fi
     
     echo ""
     echo "========================================"
-    echo "              ✅ SUCCESS"
+    echo "SUCCESS"
     echo "========================================"
-    echo "📧 Email:    $USER_EMAIL"
-    echo "🔑 Password: $NEW_PASSWORD"
-    echo "📌 Status:   $STATUS"
+    echo "Email:    $USER_EMAIL"
+    echo "Password: $NEW_PASSWORD"
+    echo "Status:   $STATUS"
     echo "========================================"
 else
-    echo "❌ ERROR: Failed to reset password for $USER_EMAIL"
+    echo "ERROR: Failed to reset password for $USER_EMAIL"
     exit 1
 fi
