@@ -69,6 +69,21 @@ https://github.com/janak0ff/script-forest/tree/Crypto-setup
 
 ---
 
+
+### 5. IMAP Sync Tool 
+
+A comprehensive IMAP/Zimbra migration management tool.
+
+**Usage:**
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/imapsync/sync.sh)"
+```
+
+View source:
+https://github.com/janak0ff/script-forest/tree/imapsync
+
+---
+
 ## Usage
 
 Run any script directly using `curl` or `wget`.
