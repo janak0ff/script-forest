@@ -105,16 +105,12 @@ prompt_optional() {
 
 prompt_password() {
     # prompt_password "Prompt text" VARNAME
-    local prompt="$1" varname="$2" value confirm
+    # Typed in plain view (no -s) and taken as a single entry — no confirmation step.
+    local prompt="$1" varname="$2" value
     while true; do
-        read -r -s -p "$prompt: " value; echo
+        read -r -p "$prompt: " value
         if [ -z "$value" ]; then
             print_error "Password cannot be empty."
-            continue
-        fi
-        read -r -s -p "Confirm password: " confirm; echo
-        if [ "$value" != "$confirm" ]; then
-            print_error "Passwords did not match, try again."
             continue
         fi
         printf -v "$varname" '%s' "$value"
@@ -125,7 +121,7 @@ prompt_password() {
 # ============================================
 # PROFILE MANAGEMENT (connection config, no secrets)
 # ============================================
-# A "profile" stores host/user/dir settings under $CONFIG_DIR/<name>.conf
+# A "profile" stores source/destination/dir settings under $CONFIG_DIR/<name>.conf
 # Passwords are NEVER stored in the profile file. They either live in a
 # chmod-600 secrets file you point to, or are typed fresh each run.
 
@@ -177,10 +173,10 @@ create_profile() {
     prompt_required "Profile name (e.g. clientname)" PROFILE_NAME
     PROFILE_NAME="${PROFILE_NAME// /_}"
 
-    prompt_required "Source host (host1, migrating FROM)" HOST1 validate_host
-    prompt_required "Source auth user (admin/migration account on host1)" AUTHUSER1
-    prompt_required "Destination host (host2, migrating TO)" HOST2 validate_host
-    prompt_required "Destination auth user (admin account on host2)" AUTHUSER2
+    prompt_required "Source host (migrating FROM)" SOURCE_HOST validate_host
+    prompt_required "Source auth user (admin/migration account on source)" SOURCE_AUTHUSER
+    prompt_required "Destination host (migrating TO)" DEST_HOST validate_host
+    prompt_required "Destination auth user (admin account on destination)" DEST_AUTHUSER
 
     echo ""
     print_info "Passwords are never written into the profile or passed on the"
@@ -191,30 +187,30 @@ create_profile() {
 
     if [ "$pw_mode" = "1" ]; then
         PASS_MODE="file"
-        prompt_password "Password for $AUTHUSER1 (source)" PASS1
-        prompt_password "Password for $AUTHUSER2 (destination)" PASS2
-        PASS1_FILE="$SECRETS_DIR/${PROFILE_NAME}_host1.pass"
-        PASS2_FILE="$SECRETS_DIR/${PROFILE_NAME}_host2.pass"
-        printf '%s' "$PASS1" > "$PASS1_FILE"
-        printf '%s' "$PASS2" > "$PASS2_FILE"
-        chmod 600 "$PASS1_FILE" "$PASS2_FILE"
-        unset PASS1 PASS2
+        prompt_password "Password for $SOURCE_AUTHUSER (source)" SOURCE_PASS
+        prompt_password "Password for $DEST_AUTHUSER (destination)" DEST_PASS
+        SOURCE_PASS_FILE="$SECRETS_DIR/${PROFILE_NAME}_source.pass"
+        DEST_PASS_FILE="$SECRETS_DIR/${PROFILE_NAME}_destination.pass"
+        printf '%s' "$SOURCE_PASS" > "$SOURCE_PASS_FILE"
+        printf '%s' "$DEST_PASS" > "$DEST_PASS_FILE"
+        chmod 600 "$SOURCE_PASS_FILE" "$DEST_PASS_FILE"
+        unset SOURCE_PASS DEST_PASS
     else
         PASS_MODE="prompt"
-        PASS1_FILE=""
-        PASS2_FILE=""
+        SOURCE_PASS_FILE=""
+        DEST_PASS_FILE=""
     fi
 
     cat > "$CONFIG_DIR/${PROFILE_NAME}.conf" <<EOF
 # Migration profile: $PROFILE_NAME
 # Generated $(date)
-HOST1="$HOST1"
-AUTHUSER1="$AUTHUSER1"
-HOST2="$HOST2"
-AUTHUSER2="$AUTHUSER2"
+SOURCE_HOST="$SOURCE_HOST"
+SOURCE_AUTHUSER="$SOURCE_AUTHUSER"
+DEST_HOST="$DEST_HOST"
+DEST_AUTHUSER="$DEST_AUTHUSER"
 PASS_MODE="$PASS_MODE"
-PASS1_FILE="$PASS1_FILE"
-PASS2_FILE="$PASS2_FILE"
+SOURCE_PASS_FILE="$SOURCE_PASS_FILE"
+DEST_PASS_FILE="$DEST_PASS_FILE"
 EOF
     chmod 600 "$CONFIG_DIR/${PROFILE_NAME}.conf"
     print_success "Profile saved: $CONFIG_DIR/${PROFILE_NAME}.conf"
@@ -235,19 +231,19 @@ load_profile() {
     if [ "$PASS_MODE" = "prompt" ]; then
         echo ""
         print_info "Profile '$PROFILE_NAME' is set to prompt for passwords each run."
-        prompt_password "Password for $AUTHUSER1 (source, $HOST1)" PASS1
-        prompt_password "Password for $AUTHUSER2 (destination, $HOST2)" PASS2
-        SESSION_PASS1_FILE="$(mktemp)"
-        SESSION_PASS2_FILE="$(mktemp)"
-        printf '%s' "$PASS1" > "$SESSION_PASS1_FILE"
-        printf '%s' "$PASS2" > "$SESSION_PASS2_FILE"
-        chmod 600 "$SESSION_PASS1_FILE" "$SESSION_PASS2_FILE"
-        unset PASS1 PASS2
-        PASS1_FILE="$SESSION_PASS1_FILE"
-        PASS2_FILE="$SESSION_PASS2_FILE"
+        prompt_password "Password for $SOURCE_AUTHUSER (source, $SOURCE_HOST)" SOURCE_PASS
+        prompt_password "Password for $DEST_AUTHUSER (destination, $DEST_HOST)" DEST_PASS
+        SESSION_SOURCE_PASS_FILE="$(mktemp)"
+        SESSION_DEST_PASS_FILE="$(mktemp)"
+        printf '%s' "$SOURCE_PASS" > "$SESSION_SOURCE_PASS_FILE"
+        printf '%s' "$DEST_PASS" > "$SESSION_DEST_PASS_FILE"
+        chmod 600 "$SESSION_SOURCE_PASS_FILE" "$SESSION_DEST_PASS_FILE"
+        unset SOURCE_PASS DEST_PASS
+        SOURCE_PASS_FILE="$SESSION_SOURCE_PASS_FILE"
+        DEST_PASS_FILE="$SESSION_DEST_PASS_FILE"
         USING_TEMP_PASS_FILES=1
     else
-        if [ ! -f "$PASS1_FILE" ] || [ ! -f "$PASS2_FILE" ]; then
+        if [ ! -f "$SOURCE_PASS_FILE" ] || [ ! -f "$DEST_PASS_FILE" ]; then
             print_error "Saved secrets file missing for this profile. Re-run and choose 'n' to recreate it."
             exit 1
         fi
@@ -257,7 +253,7 @@ load_profile() {
 
 cleanup_session_secrets() {
     if [ "${USING_TEMP_PASS_FILES:-0}" = "1" ]; then
-        shred -u "$SESSION_PASS1_FILE" "$SESSION_PASS2_FILE" 2>/dev/null || rm -f "$SESSION_PASS1_FILE" "$SESSION_PASS2_FILE"
+        shred -u "$SESSION_SOURCE_PASS_FILE" "$SESSION_DEST_PASS_FILE" 2>/dev/null || rm -f "$SESSION_SOURCE_PASS_FILE" "$SESSION_DEST_PASS_FILE"
     fi
 }
 trap cleanup_session_secrets EXIT
@@ -265,21 +261,23 @@ trap cleanup_session_secrets EXIT
 # ============================================
 # IMAPSYNC WRAPPER
 # ============================================
-# Any extra flags (e.g. --dry, extra excludes) can be appended via $EXTRA_ARGS
+# Note: imapsync's own CLI flags (--host1/--host2/--passfile1/--passfile2 etc.)
+# are fixed by imapsync itself and can't be renamed — only our internal
+# variable names and prompts use "source/destination" terminology.
 run_imapsync() {
     local user_email="$1" log_file="$2"; shift 2
     "$IMAPSYNC_BIN" \
         --nosyncacls \
         --subscribe \
         --syncinternaldates \
-        --host1 "$HOST1" \
+        --host1 "$SOURCE_HOST" \
         --user1 "$user_email" \
-        --authuser1 "$AUTHUSER1" \
-        --passfile1 "$PASS1_FILE" \
-        --host2 "$HOST2" \
+        --authuser1 "$SOURCE_AUTHUSER" \
+        --passfile1 "$SOURCE_PASS_FILE" \
+        --host2 "$DEST_HOST" \
         --user2 "$user_email" \
-        --authuser2 "$AUTHUSER2" \
-        --passfile2 "$PASS2_FILE" \
+        --authuser2 "$DEST_AUTHUSER" \
+        --passfile2 "$DEST_PASS_FILE" \
         "$@" \
         2>&1 | tee "$log_file"
     return "${PIPESTATUS[0]}"
@@ -324,7 +322,7 @@ migrate_single_user() {
 
     echo ""
     print_info "Migrating: $USER_EMAIL"
-    print_info "Source: $HOST1  ->  Destination: $HOST2"
+    print_info "Source: $SOURCE_HOST  ->  Destination: $DEST_HOST"
     echo ""
     read -r -p "Continue with migration? (y/n): " CONFIRM
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { print_info "Cancelled"; pause; return; }
@@ -340,8 +338,8 @@ migrate_single_user() {
     if [ "$timeout_secs" != "0" ] && is_number "$timeout_secs"; then
         timeout "$timeout_secs" "$IMAPSYNC_BIN" \
             --nosyncacls --subscribe --syncinternaldates \
-            --host1 "$HOST1" --user1 "$USER_EMAIL" --authuser1 "$AUTHUSER1" --passfile1 "$PASS1_FILE" \
-            --host2 "$HOST2" --user2 "$USER_EMAIL" --authuser2 "$AUTHUSER2" --passfile2 "$PASS2_FILE" \
+            --host1 "$SOURCE_HOST" --user1 "$USER_EMAIL" --authuser1 "$SOURCE_AUTHUSER" --passfile1 "$SOURCE_PASS_FILE" \
+            --host2 "$DEST_HOST" --user2 "$USER_EMAIL" --authuser2 "$DEST_AUTHUSER" --passfile2 "$DEST_PASS_FILE" \
             2>&1 | tee "$LOG_FILE"
         EXIT_CODE=${PIPESTATUS[0]}
     else
@@ -499,14 +497,14 @@ batch_migrate() {
         if [ "$timeout_secs" != "0" ] && is_number "$timeout_secs"; then
             timeout "$timeout_secs" "$IMAPSYNC_BIN" \
                 --nosyncacls --subscribe --syncinternaldates \
-                --host1 "$HOST1" --user1 "$USER_EMAIL" --authuser1 "$AUTHUSER1" --passfile1 "$PASS1_FILE" \
-                --host2 "$HOST2" --user2 "$USER_EMAIL" --authuser2 "$AUTHUSER2" --passfile2 "$PASS2_FILE" \
+                --host1 "$SOURCE_HOST" --user1 "$USER_EMAIL" --authuser1 "$SOURCE_AUTHUSER" --passfile1 "$SOURCE_PASS_FILE" \
+                --host2 "$DEST_HOST" --user2 "$USER_EMAIL" --authuser2 "$DEST_AUTHUSER" --passfile2 "$DEST_PASS_FILE" \
                 > "$LOG_FILE" 2>&1
         else
             "$IMAPSYNC_BIN" \
                 --nosyncacls --subscribe --syncinternaldates \
-                --host1 "$HOST1" --user1 "$USER_EMAIL" --authuser1 "$AUTHUSER1" --passfile1 "$PASS1_FILE" \
-                --host2 "$HOST2" --user2 "$USER_EMAIL" --authuser2 "$AUTHUSER2" --passfile2 "$PASS2_FILE" \
+                --host1 "$SOURCE_HOST" --user1 "$USER_EMAIL" --authuser1 "$SOURCE_AUTHUSER" --passfile1 "$SOURCE_PASS_FILE" \
+                --host2 "$DEST_HOST" --user2 "$USER_EMAIL" --authuser2 "$DEST_AUTHUSER" --passfile2 "$DEST_PASS_FILE" \
                 > "$LOG_FILE" 2>&1
         fi
         EXIT_CODE=$?
@@ -899,7 +897,7 @@ show_menu() {
     echo "  └─────────────────────────────────────────────────┘"
     echo ""
     echo "📊 Status:"
-    echo "  • Profile: $PROFILE_NAME  ($AUTHUSER1@$HOST1 -> $AUTHUSER2@$HOST2)"
+    echo "  • Profile: $PROFILE_NAME  ($SOURCE_AUTHUSER@$SOURCE_HOST -> $DEST_AUTHUSER@$DEST_HOST)"
     echo "  • Base Directory: $BASE_DIR"
     echo ""
     read -r -p "Select option (0-8): " MENU_OPTION
