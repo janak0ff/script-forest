@@ -62,7 +62,7 @@ apt update && apt install imapsync bc
 ### Option A — run directly from GitHub (one-liner)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/<user>/<repo>/<branch>/master_migration.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/imapsync/sync.sh)"
 ```
 
 This downloads the script straight from your repo's raw URL and pipes it
