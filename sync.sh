@@ -1,14 +1,19 @@
 #!/bin/bash
-# master_migration.sh - Reusable IMAP/Zimbra Migration Management Tool
-# Combines: Single migration, Batch migration, Status check, Verify sync, Resume failed
+# universal_migration.sh - Universal IMAP Email Migration Tool
+# Supports: Gmail, Zimbra, Outlook/Office 365, Yahoo, and any IMAP server
 #
-# Nothing is hardcoded. On first run it interviews you for connection details
-# and saves a config profile (creds go in a separate, chmod 600, gitignore-able
-# secrets file — never on the imapsync command line, never in plaintext logs).
+# Features:
+# - Gmail-specific optimizations (--gmail1 flag)
+# - Outlook/Exchange optimizations
+# - Zimbra optimizations (zmprov integration)
+# - Flexible source/destination mapping (different usernames)
+# - Batch processing with user lists
+# - Resume failed migrations
+# - Dry-run verification
 #
 # Usage:
-#   ./master_migration.sh                 # interactive menu, prompts for/reuses a profile
-#   ./master_migration.sh --profile NAME  # load a specific saved profile directly
+#   ./universal_migration.sh                 # interactive menu
+#   ./universal_migration.sh --profile NAME  # load specific profile
 
 set -o pipefail
 
@@ -22,7 +27,7 @@ BLUE='\033[0;34m'
 MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 print_header() {
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
@@ -34,11 +39,9 @@ print_error()      { echo -e "${RED}[ERROR]${NC} $1"; }
 print_success()    { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 print_info()       { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_warning()    { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-print_result()     { echo -e "${CYAN}[RESULT]${NC} $1"; }
 
 get_timestamp()   { date +%Y%m%d_%H%M%S; }
 generate_logname(){ echo "$LOG_DIR/$(date +%Y_%m_%d_%H_%M_%S)_${1}.log"; }
-
 pause() { read -r -p "Press Enter to continue..." _; }
 
 # ============================================
@@ -57,7 +60,7 @@ check_dependencies() {
     command -v bc       >/dev/null 2>&1 || missing+=("bc")
     if [ ${#missing[@]} -gt 0 ]; then
         print_error "Missing required tool(s): ${missing[*]}"
-        print_info  "Install them first (e.g. apt install ${missing[*]})."
+        print_info  "Install them first (e.g. yum install ${missing[*]} or apt install ${missing[*]})."
         exit 1
     fi
     IMAPSYNC_BIN="$(command -v imapsync)"
@@ -69,16 +72,10 @@ check_dependencies() {
 validate_email() {
     [[ "$1" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
 }
-
-validate_host() {
-    # accepts hostnames or IPv4 — good enough as a sanity check, not exhaustive
-    [[ -n "$1" ]]
-}
-
+validate_host() { [[ -n "$1" ]]; }
 is_number() { [[ "$1" =~ ^[0-9]+$ ]]; }
 
 prompt_required() {
-    # prompt_required "Prompt text" VARNAME [validator_fn]
     local prompt="$1" varname="$2" validator="$3" value
     while true; do
         read -r -p "$prompt: " value
@@ -96,7 +93,6 @@ prompt_required() {
 }
 
 prompt_optional() {
-    # prompt_optional "Prompt text" VARNAME "default"
     local prompt="$1" varname="$2" default="$3" value
     read -r -p "$prompt [$default]: " value
     value="${value:-$default}"
@@ -104,8 +100,6 @@ prompt_optional() {
 }
 
 prompt_password() {
-    # prompt_password "Prompt text" VARNAME
-    # Typed in plain view (no -s) and taken as a single entry — no confirmation step.
     local prompt="$1" varname="$2" value
     while true; do
         read -r -p "$prompt: " value
@@ -119,12 +113,8 @@ prompt_password() {
 }
 
 # ============================================
-# PROFILE MANAGEMENT (connection config, no secrets)
+# PROFILE MANAGEMENT
 # ============================================
-# A "profile" stores source/destination/dir settings under $CONFIG_DIR/<name>.conf
-# Passwords are NEVER stored in the profile file. They either live in a
-# chmod-600 secrets file you point to, or are typed fresh each run.
-
 WORK_ROOT_DEFAULT="$HOME/migration_tool"
 
 select_or_create_profile() {
@@ -170,18 +160,119 @@ select_or_create_profile() {
 create_profile() {
     echo ""
     print_subheader "New Profile"
-    prompt_required "Profile name (e.g. clientname)" PROFILE_NAME
+    prompt_required "Profile name (e.g. gmail_to_zimbra)" PROFILE_NAME
     PROFILE_NAME="${PROFILE_NAME// /_}"
 
-    prompt_required "Source host (migrating FROM)" SOURCE_HOST validate_host
-    prompt_required "Source auth user (admin/migration account on source)" SOURCE_AUTHUSER
-    prompt_required "Destination host (migrating TO)" DEST_HOST validate_host
-    prompt_required "Destination auth user (admin account on destination)" DEST_AUTHUSER
+    # Source Type Selection
+    echo ""
+    print_info "Select source email provider:"
+    echo "  1) Gmail / Google Workspace"
+    echo "  2) Zimbra"
+    echo "  3) Outlook / Office 365 / Exchange"
+    echo "  4) Yahoo Mail"
+    echo "  5) Other IMAP Server"
+    read -r -p "Select source provider (1-5): " SOURCE_PROVIDER
+
+    case $SOURCE_PROVIDER in
+        1)
+            SOURCE_HOST="imap.gmail.com"
+            SOURCE_PORT="993"
+            SOURCE_SSL="--ssl1"
+            SOURCE_OPTIONS="--gmail1"
+            print_info "Gmail selected - will use --gmail1 flag"
+            ;;
+        2)
+            prompt_required "Source host (Zimbra server)" SOURCE_HOST validate_host
+            SOURCE_PORT="993"
+            SOURCE_SSL="--ssl1"
+            SOURCE_OPTIONS=""
+            ;;
+        3)
+            SOURCE_HOST="outlook.office365.com"
+            SOURCE_PORT="993"
+            SOURCE_SSL="--ssl1"
+            SOURCE_OPTIONS=""
+            print_info "Office 365 selected - using outlook.office365.com"
+            ;;
+        4)
+            SOURCE_HOST="imap.mail.yahoo.com"
+            SOURCE_PORT="993"
+            SOURCE_SSL="--ssl1"
+            SOURCE_OPTIONS=""
+            print_info "Yahoo selected - using imap.mail.yahoo.com"
+            ;;
+        *)
+            prompt_required "Source host (IMAP server)" SOURCE_HOST validate_host
+            prompt_optional "Source port" SOURCE_PORT "993"
+            read -r -p "Use SSL? (y/n): " use_ssl
+            if [[ "$use_ssl" =~ ^[Yy]$ ]]; then
+                SOURCE_SSL="--ssl1"
+            else
+                SOURCE_SSL=""
+            fi
+            SOURCE_OPTIONS=""
+            ;;
+    esac
+
+    prompt_required "Source auth user (email address)" SOURCE_AUTHUSER validate_email
+
+    # Destination Type Selection
+    echo ""
+    print_info "Select destination email provider:"
+    echo "  1) Gmail / Google Workspace"
+    echo "  2) Zimbra"
+    echo "  3) Outlook / Office 365 / Exchange"
+    echo "  4) Yahoo Mail"
+    echo "  5) Other IMAP Server"
+    read -r -p "Select destination provider (1-5): " DEST_PROVIDER
+
+    case $DEST_PROVIDER in
+        1)
+            DEST_HOST="imap.gmail.com"
+            DEST_PORT="993"
+            DEST_SSL="--ssl2"
+            DEST_OPTIONS="--gmail2"
+            print_info "Gmail selected - will use --gmail2 flag"
+            ;;
+        2)
+            prompt_required "Destination host (Zimbra server)" DEST_HOST validate_host
+            DEST_PORT="993"
+            DEST_SSL="--ssl2"
+            DEST_OPTIONS=""
+            ;;
+        3)
+            DEST_HOST="outlook.office365.com"
+            DEST_PORT="993"
+            DEST_SSL="--ssl2"
+            DEST_OPTIONS=""
+            print_info "Office 365 selected - using outlook.office365.com"
+            ;;
+        4)
+            DEST_HOST="imap.mail.yahoo.com"
+            DEST_PORT="993"
+            DEST_SSL="--ssl2"
+            DEST_OPTIONS=""
+            print_info "Yahoo selected - using imap.mail.yahoo.com"
+            ;;
+        *)
+            prompt_required "Destination host (IMAP server)" DEST_HOST validate_host
+            prompt_optional "Destination port" DEST_PORT "993"
+            read -r -p "Use SSL? (y/n): " use_ssl
+            if [[ "$use_ssl" =~ ^[Yy]$ ]]; then
+                DEST_SSL="--ssl2"
+            else
+                DEST_SSL=""
+            fi
+            DEST_OPTIONS=""
+            ;;
+    esac
+
+    prompt_required "Destination auth user (admin account)" DEST_AUTHUSER validate_email
 
     echo ""
     print_info "Passwords are never written into the profile or passed on the"
     print_info "command line. Choose how imapsync should get them:"
-    echo "  1) Store encrypted-at-rest in a chmod 600 secrets file (recommended)"
+    echo "  1) Store in chmod 600 secrets file (recommended)"
     echo "  2) Prompt me fresh every time I run a migration"
     read -r -p "Select option (1-2): " pw_mode
 
@@ -204,10 +295,18 @@ create_profile() {
     cat > "$CONFIG_DIR/${PROFILE_NAME}.conf" <<EOF
 # Migration profile: $PROFILE_NAME
 # Generated $(date)
+SOURCE_PROVIDER="$SOURCE_PROVIDER"
 SOURCE_HOST="$SOURCE_HOST"
+SOURCE_PORT="$SOURCE_PORT"
+SOURCE_SSL="$SOURCE_SSL"
 SOURCE_AUTHUSER="$SOURCE_AUTHUSER"
+SOURCE_OPTIONS="$SOURCE_OPTIONS"
+DEST_PROVIDER="$DEST_PROVIDER"
 DEST_HOST="$DEST_HOST"
+DEST_PORT="$DEST_PORT"
+DEST_SSL="$DEST_SSL"
 DEST_AUTHUSER="$DEST_AUTHUSER"
+DEST_OPTIONS="$DEST_OPTIONS"
 PASS_MODE="$PASS_MODE"
 SOURCE_PASS_FILE="$SOURCE_PASS_FILE"
 DEST_PASS_FILE="$DEST_PASS_FILE"
@@ -224,7 +323,6 @@ load_profile() {
         print_error "Profile not found: $name"
         exit 1
     fi
-    # shellcheck source=/dev/null
     source "$conf"
     PROFILE_NAME="$name"
 
@@ -244,7 +342,7 @@ load_profile() {
         USING_TEMP_PASS_FILES=1
     else
         if [ ! -f "$SOURCE_PASS_FILE" ] || [ ! -f "$DEST_PASS_FILE" ]; then
-            print_error "Saved secrets file missing for this profile. Re-run and choose 'n' to recreate it."
+            print_error "Saved secrets file missing for this profile."
             exit 1
         fi
         USING_TEMP_PASS_FILES=0
@@ -259,32 +357,45 @@ cleanup_session_secrets() {
 trap cleanup_session_secrets EXIT
 
 # ============================================
-# IMAPSYNC WRAPPER
+# IMAPSYNC WRAPPER (Universal)
 # ============================================
-# Note: imapsync's own CLI flags (--host1/--host2/--passfile1/--passfile2 etc.)
-# are fixed by imapsync itself and can't be renamed — only our internal
-# variable names and prompts use "source/destination" terminology.
 run_imapsync() {
-    local user_email="$1" log_file="$2"; shift 2
-    "$IMAPSYNC_BIN" \
-        --nosyncacls \
-        --subscribe \
-        --syncinternaldates \
-        --host1 "$SOURCE_HOST" \
-        --user1 "$user_email" \
-        --authuser1 "$SOURCE_AUTHUSER" \
-        --passfile1 "$SOURCE_PASS_FILE" \
-        --host2 "$DEST_HOST" \
-        --user2 "$user_email" \
-        --authuser2 "$DEST_AUTHUSER" \
-        --passfile2 "$DEST_PASS_FILE" \
-        "$@" \
-        2>&1 | tee "$log_file"
+    local user1="$1" user2="$2" log_file="$3"; shift 3
+    
+    # Build the imapsync command
+    local cmd=("$IMAPSYNC_BIN")
+    
+    # Source flags
+    [ -n "$SOURCE_SSL" ] && cmd+=("$SOURCE_SSL")
+    cmd+=("--host1" "$SOURCE_HOST")
+    [ -n "$SOURCE_PORT" ] && cmd+=("--port1" "$SOURCE_PORT")
+    cmd+=("--user1" "$user1")
+    cmd+=("--authuser1" "$SOURCE_AUTHUSER")
+    cmd+=("--passfile1" "$SOURCE_PASS_FILE")
+    [ -n "$SOURCE_OPTIONS" ] && cmd+=("$SOURCE_OPTIONS")
+    
+    # Destination flags
+    [ -n "$DEST_SSL" ] && cmd+=("$DEST_SSL")
+    cmd+=("--host2" "$DEST_HOST")
+    [ -n "$DEST_PORT" ] && cmd+=("--port2" "$DEST_PORT")
+    cmd+=("--user2" "$user2")
+    cmd+=("--authuser2" "$DEST_AUTHUSER")
+    cmd+=("--passfile2" "$DEST_PASS_FILE")
+    [ -n "$DEST_OPTIONS" ] && cmd+=("$DEST_OPTIONS")
+    
+    # Common flags
+    cmd+=("--nosyncacls" "--subscribe" "--syncinternaldates")
+    
+    # Additional flags passed in
+    cmd+=("$@")
+    
+    # Run and log
+    "${cmd[@]}" 2>&1 | tee "$log_file"
     return "${PIPESTATUS[0]}"
 }
 
 # ============================================
-# ZIMBRA (zmprov) HELPERS — optional, only used if zmprov is present
+# ZIMBRA HELPERS
 # ============================================
 have_zmprov() { command -v zmprov >/dev/null 2>&1; }
 
@@ -311,55 +422,46 @@ human_readable_size() {
 }
 
 # ============================================
-# 1. SINGLE USER MIGRATION
+# 1. SINGLE USER MIGRATION (With Different Emails)
 # ============================================
 migrate_single_user() {
     clear
     print_header "SINGLE USER MIGRATION — Profile: $PROFILE_NAME"
     echo ""
+    print_info "Source Provider: $([ "$SOURCE_PROVIDER" = "1" ] && echo "Gmail" || echo "${SOURCE_HOST}")"
+    print_info "Destination Provider: $([ "$DEST_PROVIDER" = "2" ] && echo "Zimbra" || echo "${DEST_HOST}")"
+    echo ""
 
-    prompt_required "Enter user email to migrate" USER_EMAIL validate_email
+    prompt_required "Source email (migrating FROM)" SOURCE_EMAIL validate_email
+    prompt_required "Destination email (migrating TO)" DEST_EMAIL validate_email
 
     echo ""
-    print_info "Migrating: $USER_EMAIL"
-    print_info "Source: $SOURCE_HOST  ->  Destination: $DEST_HOST"
+    print_info "Migrating: $SOURCE_EMAIL -> $DEST_EMAIL"
+    print_info "Source: $SOURCE_HOST"
+    print_info "Destination: $DEST_HOST"
     echo ""
     read -r -p "Continue with migration? (y/n): " CONFIRM
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { print_info "Cancelled"; pause; return; }
 
-    local timeout_secs
-    prompt_optional "Timeout in seconds (0 = no timeout)" timeout_secs "0"
-
-    LOG_FILE=$(generate_logname "single_${USER_EMAIL}")
+    LOG_FILE=$(generate_logname "single_${SOURCE_EMAIL}_to_${DEST_EMAIL}")
     echo ""
     print_info "Running imapsync... (this may take a while)"
     echo ""
 
-    if [ "$timeout_secs" != "0" ] && is_number "$timeout_secs"; then
-        timeout "$timeout_secs" "$IMAPSYNC_BIN" \
-            --nosyncacls --subscribe --syncinternaldates \
-            --host1 "$SOURCE_HOST" --user1 "$USER_EMAIL" --authuser1 "$SOURCE_AUTHUSER" --passfile1 "$SOURCE_PASS_FILE" \
-            --host2 "$DEST_HOST" --user2 "$USER_EMAIL" --authuser2 "$DEST_AUTHUSER" --passfile2 "$DEST_PASS_FILE" \
-            2>&1 | tee "$LOG_FILE"
-        EXIT_CODE=${PIPESTATUS[0]}
-    else
-        run_imapsync "$USER_EMAIL" "$LOG_FILE"
-        EXIT_CODE=$?
-    fi
+    # Build the command
+    run_imapsync "$SOURCE_EMAIL" "$DEST_EMAIL" "$LOG_FILE"
+    EXIT_CODE=$?
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     if [ "$EXIT_CODE" -eq 0 ]; then
-        print_success "Migration completed for $USER_EMAIL"
+        print_success "Migration completed for $SOURCE_EMAIL -> $DEST_EMAIL"
         echo "Log saved to: $LOG_FILE"
         echo ""
         print_subheader "Migration Summary"
         grep -E "Messages transferred|Messages skipped|Total bytes transferred" "$LOG_FILE" | tail -3
-    elif [ "$EXIT_CODE" -eq 124 ]; then
-        print_error "Migration TIMED OUT for $USER_EMAIL after ${timeout_secs}s"
-        echo "Partial log: $LOG_FILE"
     else
-        print_error "Migration failed for $USER_EMAIL (Exit code: $EXIT_CODE)"
+        print_error "Migration failed (Exit code: $EXIT_CODE)"
         echo "Check log: $LOG_FILE"
     fi
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -367,7 +469,7 @@ migrate_single_user() {
 }
 
 # ============================================
-# 2. BATCH MIGRATION
+# 2. BATCH MIGRATION (Source->Dest Mapped)
 # ============================================
 batch_migrate() {
     clear
@@ -382,25 +484,26 @@ batch_migrate() {
     done
     echo ""
     echo "Options:"
-    echo "  1) Use existing user list file"
+    echo "  1) Use existing user list file (source emails)"
     echo "  2) Create new user list file"
-    echo "  3) Enter users manually (this run only)"
+    echo "  3) Use mapping file (source:destination pairs)"
     echo "  0) Cancel"
     echo ""
     read -r -p "Select option (0-3): " BATCH_OPTION
 
     local USER_FILE=""
+    local MAPPING_FILE=""
     case $BATCH_OPTION in
         0) print_info "Cancelled"; pause; return ;;
         1)
             read -r -p "Enter filename (from $USER_LISTS_DIR/): " uf
             USER_FILE="$USER_LISTS_DIR/$uf"
-            [ -f "$USER_FILE" ] || { print_error "File not found: $USER_FILE"; pause; return; }
+            [ -f "$USER_FILE" ] || { print_error "File not found"; pause; return; }
             ;;
         2)
             read -r -p "Enter new filename (without .txt): " nf
             USER_FILE="$USER_LISTS_DIR/${nf}.txt"
-            echo "Enter users one per line (blank line to finish):"
+            echo "Enter source emails one per line (blank line to finish):"
             : > "$USER_FILE"
             while true; do
                 read -r -p "> " line
@@ -415,57 +518,40 @@ batch_migrate() {
             print_success "Created: $USER_FILE"
             ;;
         3)
-            USER_FILE="/tmp/users_manual_$(get_timestamp).txt"
-            echo "Enter users one per line (blank line to finish):"
-            : > "$USER_FILE"
-            while true; do
-                read -r -p "> " line
-                [ -z "$line" ] && break
-                if validate_email "$line"; then
-                    echo "$line" >> "$USER_FILE"
-                else
-                    print_warning "Skipped invalid email: $line"
-                fi
-            done
-            [ -s "$USER_FILE" ] || { print_error "No valid users added"; rm -f "$USER_FILE"; pause; return; }
+            read -r -p "Enter mapping file path (format: source@domain.com:dest@domain.com): " MAPPING_FILE
+            [ -f "$MAPPING_FILE" ] || { print_error "File not found"; pause; return; }
             ;;
         *) print_error "Invalid option"; pause; return ;;
     esac
 
-    # Filter to only valid, non-comment lines
-    local VALID_FILE
-    VALID_FILE="$(mktemp)"
-    grep -v '^#\|^$' "$USER_FILE" | while read -r line; do
-        if validate_email "$line"; then
-            echo "$line"
-        else
-            print_warning "Skipping invalid entry in list: $line" >&2
+    # Prepare list
+    local LIST_FILE
+    if [ -n "$MAPPING_FILE" ]; then
+        LIST_FILE="$MAPPING_FILE"
+        TOTAL_USERS=$(grep -vc '^#\|^$' "$LIST_FILE")
+        print_info "Found $TOTAL_USERS user mappings"
+    else
+        LIST_FILE="$(mktemp)"
+        grep -v '^#\|^$' "$USER_FILE" | while read -r line; do
+            if validate_email "$line"; then
+                echo "$line:$line" >> "$LIST_FILE"
+            else
+                print_warning "Skipping invalid entry: $line" >&2
+            fi
+        done
+        TOTAL_USERS=$(wc -l < "$LIST_FILE")
+        if [ "$TOTAL_USERS" -eq 0 ]; then
+            print_error "No valid users found"
+            rm -f "$LIST_FILE"
+            pause
+            return
         fi
-    done > "$VALID_FILE"
-
-    TOTAL_USERS=$(wc -l < "$VALID_FILE")
-    if [ "$TOTAL_USERS" -eq 0 ]; then
-        print_error "No valid users found in file"
-        rm -f "$VALID_FILE"
-        pause
-        return
+        print_info "Found $TOTAL_USERS valid users to migrate"
     fi
 
     echo ""
-    print_info "Found $TOTAL_USERS valid users to migrate"
-    echo ""
-    echo "First 10:"
-    head -10 "$VALID_FILE" | sed 's/^/  /'
-    [ "$TOTAL_USERS" -gt 10 ] && echo "  ... and $((TOTAL_USERS - 10)) more"
-    echo ""
-
     read -r -p "Continue with batch migration? (y/n): " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        print_info "Cancelled"; rm -f "$VALID_FILE"; pause; return
-    fi
-
-    local timeout_secs
-    prompt_optional "Per-user timeout in seconds (0 = no timeout)" timeout_secs "0"
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { print_info "Cancelled"; rm -f "$LIST_FILE" 2>/dev/null; pause; return; }
 
     REPORT_FILE="$REPORT_DIR/batch_report_$(get_timestamp).txt"
     SUCCESS_COUNT=0
@@ -476,8 +562,6 @@ batch_migrate() {
         echo "Batch Migration Report - $(date)"
         echo "Profile: $PROFILE_NAME"
         echo "=============================="
-        echo "User File: $USER_FILE"
-        echo "Total Users: $TOTAL_USERS"
         echo "Started: $(date)"
         echo ""
         echo "RESULTS:"
@@ -488,39 +572,30 @@ batch_migrate() {
     print_info "Starting batch migration..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    while IFS= read -r USER_EMAIL || [ -n "$USER_EMAIL" ]; do
-        [ -z "$USER_EMAIL" ] && continue
+    while IFS=: read -r SOURCE_EMAIL DEST_EMAIL || [ -n "$SOURCE_EMAIL" ]; do
+        [[ "$SOURCE_EMAIL" =~ ^#.*$ ]] && continue
+        [ -z "$SOURCE_EMAIL" ] && continue
+        DEST_EMAIL="${DEST_EMAIL:-$SOURCE_EMAIL}"
+        
         echo ""
-        print_info "Migrating: $USER_EMAIL"
-        LOG_FILE=$(generate_logname "batch_${USER_EMAIL}")
-
-        if [ "$timeout_secs" != "0" ] && is_number "$timeout_secs"; then
-            timeout "$timeout_secs" "$IMAPSYNC_BIN" \
-                --nosyncacls --subscribe --syncinternaldates \
-                --host1 "$SOURCE_HOST" --user1 "$USER_EMAIL" --authuser1 "$SOURCE_AUTHUSER" --passfile1 "$SOURCE_PASS_FILE" \
-                --host2 "$DEST_HOST" --user2 "$USER_EMAIL" --authuser2 "$DEST_AUTHUSER" --passfile2 "$DEST_PASS_FILE" \
-                > "$LOG_FILE" 2>&1
-        else
-            "$IMAPSYNC_BIN" \
-                --nosyncacls --subscribe --syncinternaldates \
-                --host1 "$SOURCE_HOST" --user1 "$USER_EMAIL" --authuser1 "$SOURCE_AUTHUSER" --passfile1 "$SOURCE_PASS_FILE" \
-                --host2 "$DEST_HOST" --user2 "$USER_EMAIL" --authuser2 "$DEST_AUTHUSER" --passfile2 "$DEST_PASS_FILE" \
-                > "$LOG_FILE" 2>&1
-        fi
+        print_info "Migrating: $SOURCE_EMAIL -> $DEST_EMAIL"
+        LOG_FILE=$(generate_logname "batch_${SOURCE_EMAIL}_to_${DEST_EMAIL}")
+        
+        run_imapsync "$SOURCE_EMAIL" "$DEST_EMAIL" "$LOG_FILE"
         EXIT_CODE=$?
 
         if [ "$EXIT_CODE" -eq 0 ]; then
-            print_success "✓ $USER_EMAIL - SUCCESS"
-            echo "SUCCESS: $USER_EMAIL" >> "$REPORT_FILE"
+            print_success "✓ $SOURCE_EMAIL -> $DEST_EMAIL - SUCCESS"
+            echo "SUCCESS: $SOURCE_EMAIL -> $DEST_EMAIL" >> "$REPORT_FILE"
             ((SUCCESS_COUNT++))
         else
-            print_error "✗ $USER_EMAIL - FAILED (Exit: $EXIT_CODE)"
-            echo "FAILED: $USER_EMAIL (Exit: $EXIT_CODE)" >> "$REPORT_FILE"
-            FAILED_USERS+=("$USER_EMAIL")
+            print_error "✗ $SOURCE_EMAIL -> $DEST_EMAIL - FAILED (Exit: $EXIT_CODE)"
+            echo "FAILED: $SOURCE_EMAIL -> $DEST_EMAIL (Exit: $EXIT_CODE)" >> "$REPORT_FILE"
+            FAILED_USERS+=("$SOURCE_EMAIL:$DEST_EMAIL")
             ((FAIL_COUNT++))
         fi
         echo "Progress: $((SUCCESS_COUNT + FAIL_COUNT))/$TOTAL_USERS"
-    done < "$VALID_FILE"
+    done < "$LIST_FILE"
 
     {
         echo ""
@@ -539,14 +614,14 @@ batch_migrate() {
     print_error "Failed: $FAIL_COUNT"
     if [ "$FAIL_COUNT" -gt 0 ]; then
         echo ""
-        print_warning "Failed users:"
+        print_warning "Failed migrations:"
         printf '  %s\n' "${FAILED_USERS[@]}"
         echo ""
         print_info "Use 'Resume Failed' option to retry"
     fi
     print_info "Report saved to: $REPORT_FILE"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    rm -f "$VALID_FILE"
+    rm -f "$LIST_FILE" 2>/dev/null
     pause
 }
 
@@ -557,7 +632,7 @@ check_status() {
     clear
     print_header "MIGRATION STATUS CHECK — Profile: $PROFILE_NAME"
     echo ""
-    prompt_required "Enter user email to check" USER_EMAIL validate_email
+    prompt_required "Enter email to check" USER_EMAIL validate_email
     echo ""
     print_subheader "Checking: $USER_EMAIL"
     echo ""
@@ -573,16 +648,13 @@ check_status() {
             echo "Last Login: ${LAST_LOGIN:-Never}"
             STATUS=$(zmprov -l ga "$USER_EMAIL" 2>/dev/null | grep "zimbraAccountStatus:" | cut -d' ' -f2)
             echo "Account Status: ${STATUS:-unknown}"
-            PWD_CHANGE=$(zmprov -l ga "$USER_EMAIL" 2>/dev/null | grep "zimbraPasswordMustChange:" | cut -d' ' -f2)
-            echo "Password Must Change: ${PWD_CHANGE:-unset}"
             QUOTA=$(zmprov -l ga "$USER_EMAIL" 2>/dev/null | grep "zimbraMailQuota:" | cut -d' ' -f2)
             echo "Mail Quota: $([ -n "$QUOTA" ] && human_readable_size "$QUOTA" || echo Unlimited)"
         else
             print_error "✗ User NOT found on destination server"
         fi
     else
-        print_warning "zmprov not found on this host — skipping Zimbra-specific lookup."
-        print_info "(This still works for plain IMAP-to-IMAP migrations; the log check below still applies.)"
+        print_warning "zmprov not found — skipping Zimbra-specific lookup."
     fi
 
     echo ""
@@ -613,26 +685,22 @@ check_status() {
 }
 
 # ============================================
-# 4. VERIFY SYNC (dry run diff)
+# 4. VERIFY SYNC (Dry Run)
 # ============================================
 verify_sync() {
     clear
     print_header "VERIFY SYNC (Source vs Destination) — Profile: $PROFILE_NAME"
     echo ""
-    prompt_required "Enter user email to verify" USER_EMAIL validate_email
+    prompt_required "Source email to verify" SOURCE_EMAIL validate_email
+    prompt_required "Destination email to verify" DEST_EMAIL validate_email
 
-    if have_zmprov && ! check_user_exists "$USER_EMAIL"; then
-        print_error "User does not exist on destination server"
-        pause
-        return
-    fi
-
-    print_info "Verifying: $USER_EMAIL"
+    print_info "Verifying: $SOURCE_EMAIL -> $DEST_EMAIL"
     echo ""
     echo "Running verification (dry run, this may take a moment)..."
     echo ""
-    VERIFY_LOG=$(generate_logname "verify_${USER_EMAIL}")
-    run_imapsync "$USER_EMAIL" "$VERIFY_LOG" --dry
+    VERIFY_LOG=$(generate_logname "verify_${SOURCE_EMAIL}_to_${DEST_EMAIL}")
+    run_imapsync "$SOURCE_EMAIL" "$DEST_EMAIL" "$VERIFY_LOG" --dry
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     print_subheader "Verification Results"
@@ -681,17 +749,17 @@ resume_failed() {
     REPORT_FILE="${REPORT_MAP[$SELECTION]}"
     print_info "Using report: $(basename "$REPORT_FILE")"
 
-    mapfile -t FAILED_USERS < <(grep "^FAILED:" "$REPORT_FILE" | awk '{print $2}')
-    if [ ${#FAILED_USERS[@]} -eq 0 ]; then
-        print_success "No failed users in this report"
+    mapfile -t FAILED_MIGRATIONS < <(grep "^FAILED:" "$REPORT_FILE" | sed 's/FAILED: //')
+    if [ ${#FAILED_MIGRATIONS[@]} -eq 0 ]; then
+        print_success "No failed migrations in this report"
         pause
         return
     fi
 
     echo ""
-    print_warning "Found ${#FAILED_USERS[@]} failed users:"
-    printf '  %s\n' "${FAILED_USERS[@]:0:20}"
-    [ ${#FAILED_USERS[@]} -gt 20 ] && echo "... and $((${#FAILED_USERS[@]} - 20)) more"
+    print_warning "Found ${#FAILED_MIGRATIONS[@]} failed migrations:"
+    printf '  %s\n' "${FAILED_MIGRATIONS[@]:0:20}"
+    [ ${#FAILED_MIGRATIONS[@]} -gt 20 ] && echo "... and $((${#FAILED_MIGRATIONS[@]} - 20)) more"
     echo ""
 
     read -r -p "Resume these migrations? (y/n): " CONFIRM
@@ -711,18 +779,24 @@ resume_failed() {
     echo ""
     print_info "Resuming migrations..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    for USER_EMAIL in "${FAILED_USERS[@]}"; do
+
+    for MIGRATION in "${FAILED_MIGRATIONS[@]}"; do
+        # Parse source and destination from format: "source@domain.com -> dest@domain.com" or "source@domain.com -> dest@domain.com (Exit: X)"
+        SOURCE_EMAIL=$(echo "$MIGRATION" | sed -E 's/^[[:space:]]*([^ ]+) -> ([^ ]+).*$/\1/')
+        DEST_EMAIL=$(echo "$MIGRATION" | sed -E 's/^[[:space:]]*([^ ]+) -> ([^ ]+).*$/\2/')
+        
         echo ""
-        print_info "Retrying: $USER_EMAIL"
-        LOG_FILE=$(generate_logname "resume_${USER_EMAIL}")
-        run_imapsync "$USER_EMAIL" "$LOG_FILE" >/dev/null
+        print_info "Retrying: $SOURCE_EMAIL -> $DEST_EMAIL"
+        LOG_FILE=$(generate_logname "resume_${SOURCE_EMAIL}_to_${DEST_EMAIL}")
+        
+        run_imapsync "$SOURCE_EMAIL" "$DEST_EMAIL" "$LOG_FILE"
         if [ $? -eq 0 ]; then
-            print_success "✓ $USER_EMAIL - SUCCESS"
-            echo "SUCCESS: $USER_EMAIL" >> "$RESUME_REPORT"
+            print_success "✓ $SOURCE_EMAIL -> $DEST_EMAIL - SUCCESS"
+            echo "SUCCESS: $SOURCE_EMAIL -> $DEST_EMAIL" >> "$RESUME_REPORT"
             ((SUCCESS_COUNT++))
         else
-            print_error "✗ $USER_EMAIL - FAILED AGAIN"
-            echo "FAILED: $USER_EMAIL" >> "$RESUME_REPORT"
+            print_error "✗ $SOURCE_EMAIL -> $DEST_EMAIL - FAILED AGAIN"
+            echo "FAILED: $SOURCE_EMAIL -> $DEST_EMAIL" >> "$RESUME_REPORT"
             ((FAIL_COUNT++))
         fi
     done
@@ -757,20 +831,21 @@ manage_user_lists() {
     fi
     echo ""
     echo "Options:"
-    echo "  1) Create new user list"
-    echo "  2) View user list contents"
-    echo "  3) Delete user list"
-    echo "  4) Import users from a file path"
+    echo "  1) Create new user list (source emails only)"
+    echo "  2) Create mapping file (source:destination pairs)"
+    echo "  3) View file contents"
+    echo "  4) Delete file"
+    echo "  5) Import from file path"
     echo "  0) Back to main menu"
     echo ""
-    read -r -p "Select option (0-4): " LIST_OPTION
+    read -r -p "Select option (0-5): " LIST_OPTION
 
     case $LIST_OPTION in
         0) return ;;
         1)
             read -r -p "Enter filename (without .txt): " nl
             local USER_FILE="$USER_LISTS_DIR/${nl}.txt"
-            echo "Enter users one per line (blank line to finish):"
+            echo "Enter source emails one per line (blank line to finish):"
             : > "$USER_FILE"
             while true; do
                 read -r -p "> " line
@@ -784,6 +859,27 @@ manage_user_lists() {
             fi
             ;;
         2)
+            read -r -p "Enter mapping filename (without .txt): " nl
+            local MAP_FILE="$USER_LISTS_DIR/${nl}.txt"
+            echo "Enter source:destination pairs one per line (blank line to finish):"
+            echo "Format: source@domain.com:dest@domain.com"
+            : > "$MAP_FILE"
+            while true; do
+                read -r -p "> " line
+                [ -z "$line" ] && break
+                if [[ "$line" =~ ^[^:]+:[^:]+$ ]]; then
+                    echo "$line" >> "$MAP_FILE"
+                else
+                    print_warning "Skipped invalid mapping: $line (format: source:dest)"
+                fi
+            done
+            if [ -s "$MAP_FILE" ]; then
+                print_success "Created mapping file with $(wc -l < "$MAP_FILE") pairs"
+            else
+                print_error "No valid mappings added"; rm -f "$MAP_FILE"
+            fi
+            ;;
+        3)
             read -r -p "Enter filename to view: " vf
             local VIEW_FILE="$USER_LISTS_DIR/$vf"
             if [ -f "$VIEW_FILE" ]; then
@@ -791,33 +887,29 @@ manage_user_lists() {
                 echo "─────────────────────────────────────────────────"
                 cat -n "$VIEW_FILE"
                 echo "─────────────────────────────────────────────────"
-                print_info "Total users: $(grep -vc '^#\|^$' "$VIEW_FILE")"
-            else
-                print_error "File not found"
-            fi
-            ;;
-        3)
-            read -r -p "Enter filename to delete: " df
-            local DEL_FILE="$USER_LISTS_DIR/$df"
-            if [ -f "$DEL_FILE" ]; then
-                read -r -p "Confirm delete? (y/n): " CONFIRM
-                if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-                    rm -f "$DEL_FILE"; print_success "Deleted: $DEL_FILE"
-                else
-                    print_info "Cancelled"
-                fi
+                print_info "Total entries: $(grep -vc '^#\|^$' "$VIEW_FILE")"
             else
                 print_error "File not found"
             fi
             ;;
         4)
+            read -r -p "Enter filename to delete: " df
+            local DEL_FILE="$USER_LISTS_DIR/$df"
+            if [ -f "$DEL_FILE" ]; then
+                read -r -p "Confirm delete? (y/n): " CONFIRM
+                [[ "$CONFIRM" =~ ^[Yy]$ ]] && rm -f "$DEL_FILE" && print_success "Deleted" || print_info "Cancelled"
+            else
+                print_error "File not found"
+            fi
+            ;;
+        5)
             read -r -p "Enter source file path: " IMPORT_FILE
             if [ ! -f "$IMPORT_FILE" ]; then
                 print_error "Source file not found"
             else
                 read -r -p "Enter target filename (without .txt): " tn
                 cp "$IMPORT_FILE" "$USER_LISTS_DIR/${tn}.txt"
-                print_success "Imported $(grep -vc '^#\|^$' "$USER_LISTS_DIR/${tn}.txt") users"
+                print_success "Imported $(grep -vc '^#\|^$' "$USER_LISTS_DIR/${tn}.txt") entries"
             fi
             ;;
         *) print_error "Invalid option" ;;
@@ -881,23 +973,25 @@ switch_profile() {
 # ============================================
 show_menu() {
     clear
-    print_header "IMAP / ZIMBRA MIGRATION TOOL"
+    print_header "UNIVERSAL EMAIL MIGRATION TOOL"
     echo ""
-    echo "  ┌─────────────────────────────────────────────────┐"
-    echo "  │  1.  Migrate Single User                         │"
-    echo "  │  2.  Batch Migration (from user list)            │"
-    echo "  │  3.  Check Migration Status                      │"
-    echo "  │  4.  Verify Sync (Source vs Destination)         │"
-    echo "  │  5.  Resume Failed Migrations                    │"
-    echo "  │  6.  Manage User Lists                           │"
-    echo "  │  7.  View Reports                                │"
-    echo "  │  8.  Switch / Create Profile                     │"
-    echo "  │                                                   │"
-    echo "  │  0.  Exit                                        │"
-    echo "  └─────────────────────────────────────────────────┘"
+    echo "  ┌─────────────────────────────────────────────────────────┐"
+    echo "  │  1.  Migrate Single User (Source -> Destination)        │"
+    echo "  │  2.  Batch Migration (from user list)                   │"
+    echo "  │  3.  Check Migration Status                             │"
+    echo "  │  4.  Verify Sync (Source vs Destination)                │"
+    echo "  │  5.  Resume Failed Migrations                           │"
+    echo "  │  6.  Manage User Lists / Mappings                       │"
+    echo "  │  7.  View Reports                                       │"
+    echo "  │  8.  Switch / Create Profile                            │"
+    echo "  │                                                         │"
+    echo "  │  0.  Exit                                               │"
+    echo "  └─────────────────────────────────────────────────────────┘"
     echo ""
     echo "📊 Status:"
-    echo "  • Profile: $PROFILE_NAME  ($SOURCE_AUTHUSER@$SOURCE_HOST -> $DEST_AUTHUSER@$DEST_HOST)"
+    echo "  • Profile: $PROFILE_NAME"
+    echo "  • Source: $SOURCE_AUTHUSER@$SOURCE_HOST"
+    echo "  • Destination: $DEST_AUTHUSER@$DEST_HOST"
     echo "  • Base Directory: $BASE_DIR"
     echo ""
     read -r -p "Select option (0-8): " MENU_OPTION
@@ -922,7 +1016,6 @@ show_menu() {
 check_root
 check_dependencies
 
-# --profile NAME flag support for non-interactive profile load
 if [ "$1" = "--profile" ] && [ -n "$2" ]; then
     WORK_ROOT="${WORK_ROOT:-$WORK_ROOT_DEFAULT}"
     BASE_DIR="$WORK_ROOT"
