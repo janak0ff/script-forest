@@ -1,261 +1,331 @@
-A reusable, interactive terminal tool for migrating mailboxes between two
-IMAP servers (Zimbra, Dovecot, or anything IMAP-compliant) using
-[imapsync](https://imapsync.lamiral.info/). Supports single-user migration,
-batch migration from a list, status checks, dry-run verification, and
-resuming failed batches — all driven by prompts, with no server details or
-credentials hardcoded in the script.
+# Universal IMAP Email Migration Tool (`sync.sh`) v2.0.0
+
+A production-grade, interactive terminal tool built for Linux and WSL (Windows Subsystem for Linux) to migrate mailboxes between IMAP email providers using [imapsync](https://imapsync.lamiral.info/). 
+
+Supports **Gmail**, **Zimbra / Zextras Carbonio**, **Outlook / Office 365**, **Yahoo Mail**, and any standard **IMAP server**. Features single-user migrations, parallel batch processing, non-destructive dry-runs, folder regex filtering, exponential backoff retries, secret isolation, and profile management—all through a terminal interface.
 
 ---
 
-## Features
+## 📋 Table of Contents
 
-- **Single user migration** — migrate one mailbox, with an optional timeout.
-- **Batch migration** — migrate a list of users from a file, pasted inline,
-  or entered manually. Invalid email addresses are filtered out and reported
-  instead of silently breaking the run.
-- **Status check** — confirm a user exists on the destination, see mailbox
-  size / quota / last login (via `zmprov`, if available), and pull up past
-  migration logs for that user.
-- **Verify sync** — runs imapsync in `--dry` mode to compare source and
-  destination without changing anything.
-- **Resume failed migrations** — re-reads a batch report and retries only
-  the users that failed.
-- **User list management** — create, view, delete, or import `.txt` lists of
-  users to migrate.
-- **Report viewer** — browse past batch/resume reports from the menu.
-- **Multiple profiles** — save connection details for more than one
-  client/environment and switch between them without re-typing anything.
-
-## What's different from a "just works once" script
-
-This version has no hardcoded hosts, usernames, passwords, or paths.
-Everything is either:
-- entered once and saved to a **profile** (hosts, auth users, working
-  directory — no passwords), or
-- entered fresh every run (passwords, if you choose "prompt" mode).
-
-Passwords are **never** passed on the imapsync command line and are never
-written into a log. They go into imapsync's `--passfile1` / `--passfile2`
-option, backed by a file that's `chmod 600` and only readable by root.
+- [Key Features](#-key-features)
+- [Architecture & Directory Structure](#-architecture--directory-structure)
+- [Requirements & Dependencies](#-requirements--dependencies)
+- [WSL Ubuntu & Linux Setup](#-wsl-ubuntu--linux-setup)
+- [Quick Start](#-quick-start)
+- [Command Line Options (CLI)](#-command-line-options-cli)
+- [Interactive Main Menu Reference](#-interactive-main-menu-reference)
+  - [1. Migrate Single User](#1-migrate-single-user)
+  - [2. Batch Migration (Sequential & Parallel)](#2-batch-migration)
+  - [3. Check Migration Status](#3-check-migration-status)
+  - [4. Verify Sync (Dry Run)](#4-verify-sync-dry-run)
+  - [5. Resume Failed Migrations](#5-resume-failed-migrations)
+  - [6. Manage User Lists](#6-manage-user-lists)
+  - [7. View Reports](#7-view-reports)
+  - [8. Manage Profiles](#8-manage-profiles)
+  - [9. Log Cleanup](#9-log-cleanup)
+- [Security & Credentials Management](#-security--credentials-management)
+- [Advanced Usage Examples](#-advanced-usage-examples)
+  - [User Mapping (`source:destination`)](#user-mapping-sourcedestination)
+  - [Folder Include/Exclude Regex Filters](#folder-includeexclude-regex-filters)
+  - [Bandwidth Throttling](#bandwidth-throttling)
+- [WSL (Windows Subsystem for Linux) Notes](#-wsl-windows-subsystem-for-linux-notes)
+- [Troubleshooting](#-troubleshooting)
 
 ---
 
-## Requirements
+## ✨ Key Features
 
-| Tool      | Purpose                                   | Required? |
-|-----------|--------------------------------------------|-----------|
-| `bash`    | runs the script                            | yes |
-| `imapsync`| does the actual mailbox migration          | yes |
-| `bc`      | formats byte counts into KB/MB/GB          | yes |
-| `zmprov`  | Zimbra account lookups (status/quota/size) | optional — status-check features degrade gracefully without it |
-| root      | mailbox/account access                     | yes — the script refuses to run as a non-root user |
+- 🚀 **Universal IMAP Support & Provider Presets**: Native configuration helpers for Gmail/Google Workspace, Office 365/Exchange, Zimbra/Carbonio, Yahoo Mail, and custom IMAP servers.
+- ⚡ **Parallel Batch Migration**: Multi-threaded execution using IPC semaphore control (supports up to 20 concurrent worker jobs).
+- 🔁 **Automated Retries with Exponential Backoff**: Configurable retry attempts with dynamic backoff delay for batch and resume runs.
+- 🛡️ **Zero Plaintext Credentials Leakage**: Passwords stored in `chmod 600` secret files or prompted per-session, supplied via `--passfile` options. Never exposed in process tables (`ps aux`) or logs.
+- 📊 **Real-time Progress & ETA Tracking**: Interactive progress bar displaying completion percentage, elapsed time, item count, and dynamic ETA estimation.
+- 🧪 **Non-Destructive Dry Runs**: Verify mailbox differences, item counts, and size metrics prior to actual migration.
+- 📂 **Regex Folder Filtering**: Include or exclude specific mail folders (e.g., exclude `^Spam$`, `^Trash$`, or `^\[Gmail\]/All Mail`).
+- 🗂️ **Profile Management (Full CRUD + Import/Export)**: Save connection details per client or environment. Supports exporting and importing profiles (with optional base64-encoded secret payloads).
+- 🧹 **Integrated Log Maintenance**: Inspect log disk usage, cleanup logs by age or specific user, and view top largest log files.
+- 🪟 **WSL CRLF Guard**: Automatic detection and stripping of Windows line endings (`\r\n`) when run inside WSL or transferred from Windows.
 
-Install imapsync (Debian/Ubuntu example):
-```bash
-apt update && apt install imapsync bc
+---
+
+## 🏗 Architecture & Directory Structure
+
+All runtime configurations, credentials, logs, and reports live inside the base working directory (defaults to `~/migration_tool` or custom path):
+
+```text
+~/migration_tool/
+├── profiles/          # Saved connection profiles (*.conf) - host/port/user details
+├── .secrets/          # Restricted directory (chmod 700) holding chmod 600 password files
+├── LOGS/              # Detailed timestamped logs per migration/verify session
+├── reports/           # Batch migration summaries and resume reports (*.txt)
+└── user_lists/        # Saved user email lists and mapping files (*.txt)
 ```
 
 ---
 
-## Quick start
+## ⚙️ Requirements & Dependencies
 
-### Option A — run directly from GitHub (one-liner)
-
-```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/imapsync/sync.sh)"
-```
-
-This downloads the script straight from your repo's raw URL and pipes it
-into `bash`, so there's nothing to `chmod` or clean up afterward — useful
-for one-off runs on a fresh server. Replace `<user>/<repo>/<branch>` with
-wherever you've published `master_migration.sh`.
-
-> **Before you rely on this in production:** double-check the raw URL
-> actually resolves to `master_migration.sh` (not a different branch or
-> file) before running it — `curl | bash` executes whatever that URL
-> returns, with no chance to review it first. It's worth pinning to a
-> specific commit or tag rather than a branch name once the script is
-> stable, so a later push can't silently change what gets executed.
-> Since this script requires root and handles mailbox credentials, treat
-> the source repo as sensitive: keep it private, or at minimum keep the
-> `profiles/`/`.secrets/` output directories (created on the *server*
-> you run it on, not in the repo) out of it entirely — see
-> [Security notes](#security-notes).
-
-### Option B — download and run locally (recommended for repeat use)
-
-```bash
-curl -fsSL -o master_migration.sh https://raw.githubusercontent.com/<user>/<repo>/<branch>/master_migration.sh
-chmod +x master_migration.sh
-sudo ./master_migration.sh
-```
-
-Downloading first lets you read the script and keep a local copy before
-running it as root — more predictable than the one-liner if you'll be
-using it regularly, since you're always invoking the exact file you
-already reviewed.
-
-On first run you'll be walked through:
-
-1. **Working directory** — where logs, reports, user lists, and the
-   encrypted-at-rest secrets file live. Defaults to `~/migration_tool`.
-2. **Profile name** — a short label for this source/destination pair, e.g.
-   `nea`, `client-acme`.
-3. **Source (host1)** — hostname/IP and the admin/migration auth user used
-   to read mailboxes there.
-4. **Destination (host2)** — hostname/IP and the admin auth user used to
-   write mailboxes there.
-5. **Password handling** — pick one:
-   - `1) Store in a chmod 600 secrets file` — type each password once now;
-     it's saved for future runs of this profile.
-   - `2) Prompt me fresh every time` — nothing is stored; you type both
-     passwords (masked, confirmed) at the start of every session.
-
-After setup you land on the main menu.
-
-### Re-using a saved profile
-
-Next time you run the script it lists any saved profiles and lets you pick
-one instead of re-entering host/user details. To skip the picker entirely:
-
-```bash
-sudo ./master_migration.sh --profile nea
-```
-
-To add a new client/environment later, choose **"Switch / Create Profile"**
-(option 8) from the menu, or select `n` (new) at the profile picker.
+| Tool / Dependency | Purpose | Required? |
+| :--- | :--- | :--- |
+| `bash` **4.0+** | Script execution & associative array support | **Yes** |
+| `imapsync` | Underlying engine for IMAP protocol transfer | **Yes** |
+| `bc` | Floating-point calculator for byte/size conversions | **Yes** |
+| `root` (`sudo`) | System privilege check for secret/log management | **Yes** |
+| `zmprov` | Zimbra CLI utility for checking destination mailbox status/quota | Optional (degrades gracefully) |
+| `shred` | Secure file shredding for temporary session password files | Optional (falls back to `rm -f`) |
 
 ---
 
-## Menu reference
+## 🐧 WSL Ubuntu & Linux Setup
 
+### 1. Install Required Packages
+
+Run the following commands in your WSL Ubuntu terminal or Linux shell:
+
+```bash
+sudo apt update
+sudo apt install -y imapsync bc grep sed coreutils
 ```
-1. Migrate Single User          — one email address, optional timeout
-2. Batch Migration               — from a saved list, a new list, or manual entry
-3. Check Migration Status        — destination lookup + past logs for a user
-4. Verify Sync                   — dry-run diff between source and destination
-5. Resume Failed Migrations      — retry only the failures from a past batch report
-6. Manage User Lists             — create / view / delete / import .txt lists
-7. View Reports                  — browse past batch and resume reports
-8. Switch / Create Profile       — change which source/destination you're working against
-0. Exit
+
+### 2. Clone or Copy the Script
+
+```bash
+cd ~
+git clone https://github.com/janak0ff/script-forest.git
+cd script-forest
+chmod +x sync.sh
 ```
+
+---
+
+## 🚀 Quick Start
+
+Launch the interactive interface with root privileges:
+
+```bash
+sudo ./sync.sh
+```
+
+### First-Run Walkthrough:
+1. **Base Working Directory**: Set where logs, profiles, and reports are stored (default: `~/migration_tool`).
+2. **Profile Creation**:
+   - Provide a Profile Name (e.g., `company_migration`).
+   - Select Source Provider (Gmail, Zimbra, O365, Yahoo, Custom).
+   - Input Source Authentication Admin User (e.g., `admin@source.com`).
+   - Select Destination Provider.
+   - Input Destination Authentication Admin User (e.g., `admin@dest.com`).
+3. **Password Security Option**:
+   - `1) Store in secrets file`: Save passwords securely under `.secrets/` (`chmod 600`).
+   - `2) Prompt me each time`: Enter passwords per session into temporary shredded files.
+
+---
+
+## 💻 Command Line Options (CLI)
+
+`sync.sh` can be executed interactively or launched with CLI flags:
+
+```bash
+Usage:
+  sudo ./sync.sh [OPTIONS]
+
+Options:
+  -h, --help           Show help message and exit
+  -v, --version        Show version information and exit
+  --profile NAME       Directly load a saved profile by name, skipping the profile picker menu
+```
+
+### Examples:
+```bash
+# Launch interactive profile selection
+sudo ./sync.sh
+
+# Directly load the 'production_gsuite' profile
+sudo ./sync.sh --profile production_gsuite
+
+# Display version
+./sync.sh --version
+```
+
+---
+
+## 📖 Interactive Main Menu Reference
+
+```text
+╔══════════════════════════════════════════════════════════════╗
+║  UNIVERSAL EMAIL MIGRATION TOOL  v2.0.0                      ║
+╚══════════════════════════════════════════════════════════════╝
+
+  ┌─────────────────────────────────────────────────────────┐
+  │  1.  Migrate Single User                               │
+  │  2.  Batch Migration                                   │
+  │  3.  Check Migration Status                            │
+  │  4.  Verify Sync (Dry Run)                             │
+  │  5.  Resume Failed Migrations                          │
+  │  6.  Manage User Lists                                 │
+  │  7.  View Reports                                      │
+  │  8.  Manage Profiles                                   │
+  │  9.  Log Cleanup                                       │
+  │  0.  Exit                                              │
+  └─────────────────────────────────────────────────────────┘
+```
+
+---
 
 ### 1. Migrate Single User
-Prompts for the destination email, confirms, optionally asks for a timeout
-(seconds; `0` = no timeout), then runs imapsync and prints a summary
-(messages transferred/skipped, bytes transferred) pulled from the log.
+Migrates mail from one source mailbox to one destination mailbox.
+- Prompts for **Source Email** and **Destination Email**.
+- Optional **Folder Filters** (Includes / Excludes regex).
+- Optional **Bandwidth Throttle** (Bytes/sec).
+- Optional **Timeout** limit in seconds (`0` for unlimited).
+- Outputs progress bars and displays total transferred messages/bytes upon completion.
 
 ### 2. Batch Migration
-Choose an existing list, create a new one (paste emails, blank line to
-finish — invalid addresses are rejected on the spot), or enter a one-off
-list for this run only. Every address is re-validated before the batch
-starts. Produces a timestamped report in `reports/` you can revisit later
-or feed into "Resume Failed Migrations."
+Process multiple mailboxes automatically from a user list or mapping file.
+- **List Sources**: Choose from saved files in `user_lists/`, create a new list inline, or specify a mapping file (`source_email:dest_email`).
+- **Parallel Migration**: Choose between sequential execution (`1`) or parallel workers (up to `20` parallel processes running simultaneously via IPC semaphore).
+- **Auto-Retries**: Specify max retry attempts on failed transfers with exponential backoff delay.
+- **Graceful Interrupt**: Pressing `Ctrl+C` (`SIGINT`) safely stops pending launches and writes a partial report.
+- Saves a summary report in `reports/batch_report_<timestamp>.txt`.
 
 ### 3. Check Migration Status
-Looks the user up on the destination server (via `zmprov`, if installed)
-and shows mailbox size, quota, last login, and account status. Also
-searches `LOGS/` for any past migration log mentioning that address and
-offers to show the most recent one.
+Inspect mailbox status on the destination server.
+- Performs `zmprov` queries if connected to Zimbra (Mailbox Size, Quota, Last Login, Account Status).
+- Searches historical migration logs in `LOGS/` matching the requested user email.
+- Displays the tail end of the most recent log file.
 
-### 4. Verify Sync
-Runs imapsync with `--dry` so nothing is written — useful for a pre-flight
-check or a post-migration diff. Prints message counts, sizes, and any
-duplicate/skip notes.
+### 4. Verify Sync (Dry Run)
+Executes `imapsync` in non-destructive `--dry` mode.
+- Compares source and destination mailboxes without writing or deleting any messages.
+- Displays calculated diffs, message counts, and size metrics.
 
 ### 5. Resume Failed Migrations
-Lists past batch reports with their success/fail counts, lets you pick one,
-then retries every address marked `FAILED` in that report. Writes its own
-resume report.
+Retry failed mailboxes from previous batch runs without re-migrating successful ones.
+- Lists previous batch reports and their failure counts.
+- Parses exact `FAILED` entries from the selected report.
+- Supports retry attempts and backoff delay.
+- Generates a new report in `reports/resume_report_<timestamp>.txt`.
 
 ### 6. Manage User Lists
-Create, inspect, delete, or import `.txt` files of email addresses used by
-batch migration. One address per line; blank lines and `#`-prefixed lines
-are ignored.
+Create and maintain user lists in `user_lists/`:
+- Option 1: Create single email list (one email per line).
+- Option 2: Create mapping file (`source_email:destination_email`).
+- Option 3: View file contents with line numbers.
+- Option 4: Delete lists.
+- Option 5: Import existing text files into `user_lists/`.
 
 ### 7. View Reports
-Browse and open any report generated by batch or resume runs.
+Browse, select, and view full contents of batch and resume migration report files directly inside the terminal.
 
-### 8. Switch / Create Profile
-Jump to a different saved profile, or create a new one, without restarting
-the script.
+### 8. Manage Profiles
+Full CRUD management for server profile configurations:
+1. **Switch profile**: Load another existing configuration.
+2. **Create new profile**: Add connection parameters for a new source/destination pair.
+3. **Edit current profile**: Change server hostnames, admin usernames, ports, or update saved secrets.
+4. **Delete a profile**: Safely remove profiles (prevents accidental deletion of the currently active profile).
+5. **Export profile**: Export profile settings into a standalone `.conf` file (with option to include base64-encoded secret payloads).
+6. **Import profile**: Load a profile exported from another workstation.
+
+### 9. Log Cleanup
+Inspect and manage disk space consumed by log files under `LOGS/`:
+- Delete logs older than $N$ days.
+- Delete all log files.
+- Delete logs matching a specific user email.
+- View top 10 largest log files on disk.
 
 ---
 
-## File layout
+## 🔒 Security & Credentials Management
 
-Everything lives under the working directory you chose at setup (default
-`~/migration_tool`):
+Security is a primary design goal of `sync.sh`:
 
+1. **Process Isolation**: Password credentials are passed to `imapsync` using `--passfile1` and `--passfile2`. They never appear as command-line arguments, keeping them hidden from `ps aux` or `/proc` monitoring by non-root users.
+2. **File Permissions**:
+   - `profiles/`: `chmod 600` (readable only by owner/root).
+   - `.secrets/`: Directory `chmod 700`, files `chmod 600`.
+3. **Session Secrets Shredding**: In "Prompt Each Time" mode, passwords are stored in temporary files generated by `mktemp`. When the script exits, a Bash `EXIT` trap executes `shred -u` (or `rm -f`) to securely erase the temporary files from disk.
+
+---
+
+## 💡 Advanced Usage Examples
+
+### User Mapping (`source:destination`)
+
+When migrating to a new domain or where usernames differ between source and destination, create a mapping file in `user_lists/domain_mapping.txt`:
+
+```text
+# Format: source_user@olddomain.com:dest_user@newdomain.com
+john.doe@oldcompany.com:jdoe@newcompany.com
+alice.smith@oldcompany.com:asmith@newcompany.com
 ```
-migration_tool/
-├── profiles/           # saved connection profiles (*.conf) — hosts/users only, no passwords
-├── .secrets/           # chmod 700 dir; per-profile chmod 600 password files (only if you chose "store" mode)
-├── LOGS/                # one timestamped log per migration/verify/resume run
-├── reports/             # batch and resume run reports
-└── user_lists/          # saved .txt lists of addresses for batch migration
-```
 
-A profile file (`profiles/<name>.conf`) looks like this — note there is
-**no password in it**:
+Select **Option 2 (Batch Migration)** -> **Option 3 (Use mapping file)** in the main menu to run migrations with these pair mappings.
 
+### Folder Include/Exclude Regex Filters
+
+During single user or batch migrations, you can define regex folder rules:
+
+- **Exclude Spam and Trash**:
+  ```text
+  exclude> ^Trash$
+  exclude> ^Spam$
+  exclude> ^Junk$
+  ```
+- **Exclude Gmail All Mail and Starred system folders**:
+  ```text
+  exclude> ^\[Gmail\]/All Mail$
+  exclude> ^\[Gmail\]/Trash$
+  ```
+- **Include INBOX only**:
+  ```text
+  include> ^INBOX$
+  ```
+
+### Bandwidth Throttling
+
+To prevent consuming all available network bandwidth during large migrations, enter a maximum bytes-per-second rate when prompted:
+
+- `1048576` = 1 MB/s
+- `5242880` = 5 MB/s
+- `0` = Unlimited (default)
+
+---
+
+## 🐧 WSL (Windows Subsystem for Linux) Notes
+
+If running `sync.sh` under **WSL Ubuntu on Windows 10/11**:
+
+1. **File System Location**: It is strongly recommended to clone and execute the script inside the Linux native filesystem (e.g., `~/script-forest/` or `/home/username/`) rather than Windows mounts (`/mnt/c/...`) for optimal file permission (`chmod 600`) support and speed.
+2. **Windows CRLF Handling**: If edited in Windows editors (Notepad/VS Code on Windows), the script automatically detects CRLF line endings (`\r\n`), converts them to LF in a temporary buffer, and re-executes cleanly without throwing standard `\r: command not found` errors.
+
+---
+
+## ❓ Troubleshooting
+
+### 1. `ERROR: Bash 4.0+ required`
+Your environment is using an outdated shell. Verify your version with `bash --version`. On macOS, install an updated version via `brew install bash`.
+
+### 2. `Please run as root.`
+The script requires root privileges to manage permission-restricted secrets (`.secrets/`) and execute administrative commands. Run with:
 ```bash
-HOST1="192.168.8.140"
-AUTHUSER1="migration@example.org"
-HOST2="192.168.1.107"
-AUTHUSER2="admin@ldap.example.org"
-PASS_MODE="file"
-PASS1_FILE="/root/migration_tool/.secrets/example_host1.pass"
-PASS2_FILE="/root/migration_tool/.secrets/example_host2.pass"
+sudo ./sync.sh
 ```
 
----
+### 3. `Missing: imapsync bc`
+Install missing packages:
+```bash
+sudo apt update && sudo apt install -y imapsync bc
+```
 
-## Security notes
+### 4. Gmail / Google Workspace Authentication Failures
+- **2FA Enabled**: You must generate and use an **App Password** from Google Account Security settings instead of the main account password.
+- Ensure **IMAP Access** is enabled in Gmail settings (`Settings` -> `See all settings` -> `Forwarding and POP/IMAP` -> `Enable IMAP`).
 
-- Run as root is required (for `zmprov` and mailbox-level access), so treat
-  the whole `migration_tool/` directory as sensitive — it's created with
-  restrictive permissions on the secrets subfolder, but back it up and
-  transfer it carefully.
-- Passwords are supplied to imapsync via `--passfile1`/`--passfile2`, never
-  `--password1`/`--password2` — this keeps them out of `ps aux` and
-  `/proc/<pid>/cmdline` output, which any local user could otherwise read
-  while a sync is running.
-- If you choose "prompt every time" mode, the password is written to a
-  `mktemp`, `chmod 600` file for the duration of the session only, and
-  shredded (`shred -u`, falling back to `rm -f`) when the script exits.
-- `profiles/*.conf` and any stored password files are excluded from source
-  control by convention — if you put `migration_tool/` under git, add a
-  `.gitignore` for `profiles/` and `.secrets/`.
-- Logs and reports may contain email addresses and mailbox metadata; treat
-  `LOGS/` and `reports/` as containing PII.
+### 5. Office 365 / Outlook Authentication Errors
+- Office 365 requires enabling Basic Authentication for IMAP or generating an App Password depending on your tenant's security defaults and Conditional Access policies.
 
 ---
 
-## Troubleshooting
+## 📄 License
 
-**"Please run as root"**
-Run with `sudo` — the script needs it for Zimbra account lookups and
-consistent mailbox access.
-
-**"Missing required tool(s): imapsync bc"**
-Install them (`apt install imapsync bc` on Debian/Ubuntu, or the
-equivalent for your distro) and re-run.
-
-**"Saved secrets file missing for this profile"**
-The profile's `.conf` points at a password file under `.secrets/` that no
-longer exists. Re-run the script, pick "new profile" with the same name
-to recreate it, or switch that profile's password mode to "prompt" by
-editing the `.conf` file's `PASS_MODE` line to `prompt`.
-
-**zmprov-based status checks return nothing**
-`zmprov` isn't installed or isn't on `$PATH` on this host — status checks
-that rely on it are skipped with a warning, but migration, batch, verify,
-and log-lookup features all still work normally.
-
-**A migration seems stuck**
-Use the timeout prompt in "Migrate Single User" or "Batch Migration" next
-time, or `Ctrl+C` the current run — imapsync is safe to interrupt and
-resume; just re-run the same migration and it will pick up where it left
-off.
+This tool is distributed under the MIT License. See `LICENSE` for details.
