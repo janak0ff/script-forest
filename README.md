@@ -1,8 +1,8 @@
 # Universal IMAP Email Migration Tool (`sync.sh`) v2.0.0
 
-A production-grade, interactive terminal tool built for Linux and WSL (Windows Subsystem for Linux) to migrate mailboxes between IMAP email providers using [imapsync](https://imapsync.lamiral.info/). 
+A production-grade, interactive terminal tool built to migrate mailboxes between IMAP email providers using [imapsync](https://imapsync.lamiral.info/). 
 
-Supports **Gmail**, **Zimbra / Zextras Carbonio**, **Outlook / Office 365**, **Yahoo Mail**, and any standard **IMAP server**. Features single-user migrations, parallel batch processing, non-destructive dry-runs, folder regex filtering, exponential backoff retries, secret isolation, and profile management—all through a terminal interface.
+Supports **Gmail**, **Zimbra / Zextras Carbonio**, **Outlook / Office 365**, **Yahoo Mail**, and any standard **IMAP server**. Features single-user migrations, parallel batch processing, non-destructive dry-runs, folder regex filtering, exponential backoff retries, secret isolation, and profile management—all through an interactive terminal interface.
 
 ---
 
@@ -11,7 +11,6 @@ Supports **Gmail**, **Zimbra / Zextras Carbonio**, **Outlook / Office 365**, **Y
 - [Key Features](#-key-features)
 - [Architecture & Directory Structure](#-architecture--directory-structure)
 - [Requirements & Dependencies](#-requirements--dependencies)
-- [WSL Ubuntu & Linux Setup](#-wsl-ubuntu--linux-setup)
 - [Quick Start](#-quick-start)
 - [Command Line Options (CLI)](#-command-line-options-cli)
 - [Interactive Main Menu Reference](#-interactive-main-menu-reference)
@@ -29,7 +28,6 @@ Supports **Gmail**, **Zimbra / Zextras Carbonio**, **Outlook / Office 365**, **Y
   - [User Mapping (`source:destination`)](#user-mapping-sourcedestination)
   - [Folder Include/Exclude Regex Filters](#folder-includeexclude-regex-filters)
   - [Bandwidth Throttling](#bandwidth-throttling)
-- [WSL (Windows Subsystem for Linux) Notes](#-wsl-windows-subsystem-for-linux-notes)
 - [Troubleshooting](#-troubleshooting)
 
 ---
@@ -45,7 +43,6 @@ Supports **Gmail**, **Zimbra / Zextras Carbonio**, **Outlook / Office 365**, **Y
 - 📂 **Regex Folder Filtering**: Include or exclude specific mail folders (e.g., exclude `^Spam$`, `^Trash$`, or `^\[Gmail\]/All Mail`).
 - 🗂️ **Profile Management (Full CRUD + Import/Export)**: Save connection details per client or environment. Supports exporting and importing profiles (with optional base64-encoded secret payloads).
 - 🧹 **Integrated Log Maintenance**: Inspect log disk usage, cleanup logs by age or specific user, and view top largest log files.
-- 🪟 **WSL CRLF Guard**: Automatic detection and stripping of Windows line endings (`\r\n`) when run inside WSL or transferred from Windows.
 
 ---
 
@@ -75,39 +72,35 @@ All runtime configurations, credentials, logs, and reports live inside the base 
 | `zmprov` | Zimbra CLI utility for checking destination mailbox status/quota | Optional (degrades gracefully) |
 | `shred` | Secure file shredding for temporary session password files | Optional (falls back to `rm -f`) |
 
----
-
-## 🐧 WSL Ubuntu & Linux Setup
-
-### 1. Install Required Packages
-
-Run the following commands in your WSL Ubuntu terminal or Linux shell:
-
+Prerequisite installation command (Debian/Ubuntu):
 ```bash
-sudo apt update
-sudo apt install -y imapsync bc grep sed coreutils
-```
-
-### 2. Clone or Copy the Script
-
-```bash
-cd ~
-git clone https://github.com/janak0ff/script-forest.git
-cd script-forest
-chmod +x sync.sh
+sudo apt update && sudo apt install -y imapsync bc grep sed coreutils
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-Launch the interactive interface with root privileges:
+### Option 1: Direct One-Liner (Recommended)
+
+Run the script directly from GitHub without cloning:
 
 ```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/imapsync/sync.sh)"
+```
+
+### Option 2: Local Execution
+
+If you have cloned the repository locally:
+
+```bash
+chmod +x sync.sh
 sudo ./sync.sh
 ```
 
-### First-Run Walkthrough:
+---
+
+### First-Run Interactive Walkthrough:
 1. **Base Working Directory**: Set where logs, profiles, and reports are stored (default: `~/migration_tool`).
 2. **Profile Creation**:
    - Provide a Profile Name (e.g., `company_migration`).
@@ -291,15 +284,6 @@ To prevent consuming all available network bandwidth during large migrations, en
 
 ---
 
-## 🐧 WSL (Windows Subsystem for Linux) Notes
-
-If running `sync.sh` under **WSL Ubuntu on Windows 10/11**:
-
-1. **File System Location**: It is strongly recommended to clone and execute the script inside the Linux native filesystem (e.g., `~/script-forest/` or `/home/username/`) rather than Windows mounts (`/mnt/c/...`) for optimal file permission (`chmod 600`) support and speed.
-2. **Windows CRLF Handling**: If edited in Windows editors (Notepad/VS Code on Windows), the script automatically detects CRLF line endings (`\r\n`), converts them to LF in a temporary buffer, and re-executes cleanly without throwing standard `\r: command not found` errors.
-
----
-
 ## ❓ Troubleshooting
 
 ### 1. `ERROR: Bash 4.0+ required`
@@ -325,7 +309,3 @@ sudo apt update && sudo apt install -y imapsync bc
 - Office 365 requires enabling Basic Authentication for IMAP or generating an App Password depending on your tenant's security defaults and Conditional Access policies.
 
 ---
-
-## 📄 License
-
-This tool is distributed under the MIT License. See `LICENSE` for details.
