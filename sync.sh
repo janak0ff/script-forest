@@ -1,7 +1,7 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════
 # Universal IMAP Email Migration Tool  v2.0.0
-# Supports: Gmail, Zimbra, Outlook/Office 365, Yahoo, any IMAP
+# Supports: Gmail, Zimbra, Zextras Carbonio, Outlook/Office 365, Yahoo, any IMAP
 # ══════════════════════════════════════════════════════════════
 
 VERSION="2.0.0"
@@ -92,7 +92,7 @@ show_progress() {
 provider_name() {
     case "$1" in
         1) echo "Gmail / Google Workspace" ;;
-        2) echo "Zimbra" ;;
+        2) echo "Zimbra / Zextras Carbonio" ;;
         3) echo "Outlook / Office 365 / Exchange" ;;
         4) echo "Yahoo Mail" ;;
         *) echo "Other IMAP Server" ;;
@@ -246,7 +246,7 @@ configure_provider() {
     echo ""
     print_info "Select $label provider:"
     echo "  1) Gmail / Google Workspace"
-    echo "  2) Zimbra"
+    echo "  2) Zimbra / Zextras Carbonio"
     echo "  3) Outlook / Office 365 / Exchange"
     echo "  4) Yahoo Mail"
     echo "  5) Other IMAP Server"
@@ -747,7 +747,7 @@ run_imapsync() {
 }
 
 # ============================================
-# ZIMBRA HELPERS (Optional)
+# ZIMBRA / Zextras Carbonio HELPERS (Optional)
 # ============================================
 have_zmprov() { command -v zmprov >/dev/null 2>&1; }
 
@@ -1657,7 +1657,7 @@ Options:
 
 Description:
   Interactive tool for migrating email via IMAP using imapsync.
-  Supports Gmail, Zimbra, Outlook/Office 365, Yahoo, and any IMAP server.
+  Supports Gmail, Zimbra, Zextras Carbonio, Outlook/Office 365, Yahoo, and any IMAP server.
 
 Features:
   • Single-user and batch migration
