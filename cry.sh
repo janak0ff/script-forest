@@ -1,15 +1,9 @@
 #!/bin/bash
 
-VERSION="2.15"
-
-# --- COLORS FOR OUTPUT ---
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+VERSION=2.14
 
 if [ "$(id -u)" == "0" ]; then
-  echo -e "${YELLOW}WARNING: Generally it is not advised to run this script under root${NC}"
+  echo "WARNING: Generally it is not advised to run this script under root"
 fi
 
 # --- MODIFIED: Default wallet (hardcoded) ---
@@ -22,15 +16,15 @@ INSTALL_DIR="/usr/local/ocean"
 if [ ! -z "$1" ]; then
   WALLET="$1"
   EMAIL="$2"
-  echo -e "${GREEN}Using wallet from argument: $WALLET${NC}"
+  echo "Using wallet from argument: $WALLET"
 else
   WALLET="$DEFAULT_WALLET"
   EMAIL="$1"
-  echo -e "${GREEN}Using default hardcoded wallet: $WALLET${NC}"
+  echo "Using default hardcoded wallet: $WALLET"
 fi
 
 if [ ! -z "$EMAIL" ]; then
-  echo -e "${GREEN}Email: $EMAIL${NC}"
+  echo "Email: $EMAIL"
 fi
 echo ""
 
@@ -38,7 +32,7 @@ echo ""
 echo "========================================"
 echo "CPU Usage Configuration"
 echo "========================================"
-echo "Enter the percentage of CPU you want to use for mining."
+echo "Enter the percentage of CPU you want to use for the service."
 echo " - 100 = maximum performance (may cause overheating)"
 echo " - 75  = balanced (recommended for laptops/VPS)"
 echo " - 50  = conservative (for shared systems)"
@@ -49,13 +43,15 @@ read -p "Enter CPU percentage (1-100, default 100): " CPU_PERCENT
 # Validate input: if empty, default to 100
 if [ -z "$CPU_PERCENT" ]; then
     CPU_PERCENT=100
-    echo -e "${GREEN}Using default: 100%${NC}"
+    echo "Using default: 100%"
 else
+    # Check if input is a valid number between 1 and 100
     if ! [[ "$CPU_PERCENT" =~ ^[0-9]+$ ]] || [ "$CPU_PERCENT" -lt 1 ] || [ "$CPU_PERCENT" -gt 100 ]; then
-        echo -e "${RED}ERROR: Invalid input. Using default: 100%${NC}"
+        echo "ERROR: Invalid input. Please enter a number between 1 and 100."
+        echo "Using default: 100%"
         CPU_PERCENT=100
     else
-        echo -e "${GREEN}Using: ${CPU_PERCENT}%${NC}"
+        echo "Using: ${CPU_PERCENT}%"
     fi
 fi
 echo ""
@@ -70,7 +66,7 @@ detect_os() {
         OS=$(uname -s)
         VERSION=$(uname -r)
     fi
-    echo -e "${GREEN}Detected OS: $OS $VERSION${NC}"
+    echo "Detected OS: $OS $VERSION"
 }
 
 # --- PACKAGE MANAGER DETECTION ---
@@ -132,11 +128,11 @@ detect_package_manager() {
         PKG_curl="curl"
         PKG_wget="wget"
         PKG_bc="bc"
-        PKG_systemd="systemd"
+        PKG_systemd="systemd"  # May not be available on Alpine
         PKG_tar="tar"
         PKG_gzip="gzip"
     else
-        echo -e "${RED}ERROR: Unsupported package manager.${NC}"
+        echo "ERROR: Unsupported package manager. Please install curl, wget, bc, tar, gzip manually."
         exit 1
     fi
 }
@@ -145,10 +141,10 @@ detect_package_manager() {
 install_package() {
     local pkg=$1
     if ! command -v $pkg &> /dev/null; then
-        echo -e "${YELLOW}Installing $pkg...${NC}"
+        echo "Installing $pkg..."
         $INSTALL_CMD $pkg
         if [ $? -ne 0 ]; then
-            echo -e "${YELLOW}WARNING: Failed to install $pkg.${NC}"
+            echo "WARNING: Failed to install $pkg. Please install it manually."
         fi
     fi
 }
@@ -158,16 +154,17 @@ detect_os
 detect_package_manager
 
 # Install required packages
-echo -e "${GREEN}[*] Checking and installing required packages...${NC}"
-$UPDATE_CMD 2>/dev/null || true
+echo "[*] Checking and installing required packages..."
+$UPDATE_CMD 2>/dev/null || true  # Ignore errors if update fails
 
+# Install each package individually
 for pkg in $PKG_curl $PKG_wget $PKG_bc $PKG_tar $PKG_gzip; do
     install_package $pkg
 done
 
 # --- AUTO-DETECT CPU CORES ---
 if ! command -v nproc &> /dev/null; then
-    echo -e "${YELLOW}WARNING: nproc not found. Using fallback method.${NC}"
+    echo "WARNING: nproc not found. Using fallback method to count CPU threads."
     CPU_THREADS=$(grep -c ^processor /proc/cpuinfo)
 else
     CPU_THREADS=$(nproc)
@@ -201,30 +198,31 @@ else
     RX_THREADS="$RX_THREADS]"
 fi
 
-echo -e "${GREEN}[*] Detected $CPU_THREADS CPU threads.${NC}"
-echo -e "${GREEN}[*] Using $THREADS_TO_USE threads (${CPU_PERCENT}%).${NC}"
-echo -e "${GREEN}[*] RX thread configuration: $RX_THREADS${NC}"
+echo "[*] Detected $CPU_THREADS CPU threads."
+echo "[*] Using $THREADS_TO_USE threads (${CPU_PERCENT}%)."
+echo "[*] RX thread configuration: $RX_THREADS"
 
 # checking prerequisites
 WALLET_BASE=$(echo $WALLET | cut -f1 -d".")
 if [ ${#WALLET_BASE} != 106 ] && [ ${#WALLET_BASE} != 95 ]; then
-  echo -e "${RED}ERROR: Wrong wallet base address length: ${#WALLET_BASE}${NC}"
+  echo "ERROR: Wrong wallet base address length (should be 106 or 95): ${#WALLET_BASE}"
+  echo "Wallet provided: $WALLET"
   exit 1
 fi
 
 if ! command -v curl &> /dev/null; then
-  echo -e "${RED}ERROR: This script requires \"curl\" utility${NC}"
+  echo "ERROR: This script requires \"curl\" utility to work correctly"
   exit 1
 fi
 
 if ! command -v lscpu &> /dev/null; then
-  echo -e "${YELLOW}WARNING: This script requires \"lscpu\" utility${NC}"
+  echo "WARNING: This script requires \"lscpu\" utility to work correctly"
 fi
 
 # calculating port
 EXP_MONERO_HASHRATE=$(( CPU_THREADS * 700 / 1000))
 if [ -z $EXP_MONERO_HASHRATE ]; then
-  echo -e "${RED}ERROR: Can't compute projected Monero CN hashrate${NC}"
+  echo "ERROR: Can't compute projected hashrate"
   exit 1
 fi
 
@@ -269,114 +267,107 @@ PORT=$(( $PORT == 0 ? 1 : $PORT ))
 PORT=$(power2 $PORT)
 PORT=$(( 10000 + $PORT ))
 if [ -z $PORT ]; then
-  echo -e "${RED}ERROR: Can't compute port${NC}"
+  echo "ERROR: Can't compute port"
   exit 1
 fi
 
 if [ "$PORT" -lt "10001" -o "$PORT" -gt "18192" ]; then
-  echo -e "${RED}ERROR: Wrong computed port value: $PORT${NC}"
+  echo "ERROR: Wrong computed port value: $PORT"
   exit 1
 fi
+
+# printing intentions
+echo "I will download, setup and run in background the Ocean service."
+echo "If needed, the service can be started manually by $INSTALL_DIR/start.sh script."
+echo "Payouts will be sent to $WALLET wallet."
+if [ ! -z $EMAIL ]; then
+  echo "(and $EMAIL email as password to modify wallet options later at https://moneroocean.stream site)"
+fi
+echo
 
 # Check sudo availability
 if command -v sudo &> /dev/null && sudo -n true 2>/dev/null; then
   SUDO_AVAILABLE=true
-  echo -e "${GREEN}Mining in background will be performed using systemd service.${NC}"
+  echo "The service will run using ocean systemd service."
 else
   SUDO_AVAILABLE=false
-  echo -e "${YELLOW}Since I can't do passwordless sudo, mining in background will started from your $HOME/.profile file.${NC}"
+  echo "Since I can't do passwordless sudo, the service will start from your $HOME/.profile file first time you login this host after reboot."
 fi
 
 echo
-echo -e "${GREEN}JFYI: This host has $CPU_THREADS CPU threads, so projected Monero hashrate is around $EXP_MONERO_HASHRATE KH/s.${NC}"
-echo
 
-echo -e "${YELLOW}Sleeping for 15 seconds before continuing (press Ctrl+C to cancel)${NC}"
+echo "Sleeping for 15 seconds before continuing (press Ctrl+C to cancel)"
 sleep 15
 echo
 echo
 
-# start doing stuff: preparing 
-echo -e "${GREEN}[*] Removing previous installation (if any)${NC}"
+# start doing stuff: preparing
+echo "[*] Removing previous installation (if any)"
 if [ "$SUDO_AVAILABLE" = true ]; then
   sudo systemctl stop ocean 2>/dev/null
   sudo systemctl disable ocean 2>/dev/null
 fi
-sudo killall xmrig 2>/dev/null || true
+sudo killall -9 xmrig 2>/dev/null
 
-echo -e "${GREEN}[*] Removing $INSTALL_DIR directory (if exists)${NC}"
+echo "[*] Removing $INSTALL_DIR directory (if exists)"
 sudo rm -rf $INSTALL_DIR
 
-echo -e "${GREEN}[*] Creating $INSTALL_DIR directory${NC}"
+echo "[*] Creating $INSTALL_DIR directory"
 sudo mkdir -p $INSTALL_DIR
-sudo chown -R root:root $INSTALL_DIR
-sudo chmod 755 $INSTALL_DIR
 
-# --- FIXED: Download from official MoneroOcean releases (COMPAT BUILD) ---
-echo -e "${GREEN}[*] Downloading MoneroOcean XMRig (compatibility build) to /tmp/xmrig.tar.gz${NC}"
-XMRIG_VERSION="6.26.0-mo4"
-XMRIG_URL="https://github.com/MoneroOcean/xmrig/releases/download/v${XMRIG_VERSION}/xmrig-v${XMRIG_VERSION}-lin-compat.tar.gz"
-
-if ! curl -L --progress-bar "$XMRIG_URL" -o /tmp/xmrig.tar.gz; then
-  echo -e "${RED}ERROR: Can't download $XMRIG_URL${NC}"
+echo "[*] Downloading Ocean binary to /tmp/xmrig.tar.gz"
+if ! curl -L --progress-bar "https://raw.githubusercontent.com/MoneroOcean/xmrig_setup/master/xmrig.tar.gz" -o /tmp/xmrig.tar.gz; then
+  echo "ERROR: Can't download https://raw.githubusercontent.com/MoneroOcean/xmrig_setup/master/xmrig.tar.gz file to /tmp/xmrig.tar.gz"
   exit 1
 fi
 
-# Verify it's a valid tar.gz
-if ! file /tmp/xmrig.tar.gz | grep -q "gzip compressed data"; then
-  echo -e "${RED}ERROR: Downloaded file is not a valid tar.gz archive${NC}"
-  echo -e "${YELLOW}The URL may have changed. Please check: https://github.com/MoneroOcean/xmrig/releases${NC}"
-  exit 1
-fi
-
-echo -e "${GREEN}[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR${NC}"
-if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip-components=1; then
-  echo -e "${RED}ERROR: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory${NC}"
+echo "[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR"
+if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR; then
+  echo "ERROR: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory"
   exit 1
 fi
 sudo rm /tmp/xmrig.tar.gz
 
-# --- Rest of the script continues ---
-echo -e "${GREEN}[*] Checking if advanced version of $INSTALL_DIR/xmrig works fine${NC}"
-sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 1,/' $INSTALL_DIR/config.json 2>/dev/null || true
+echo "[*] Checking if the downloaded binary works fine (and not removed by antivirus software)"
+sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 1,/' $INSTALL_DIR/config.json
 $INSTALL_DIR/xmrig --help >/dev/null
 if (test $? -ne 0); then
   if [ -f $INSTALL_DIR/xmrig ]; then
-    echo -e "${YELLOW}WARNING: Advanced version of $INSTALL_DIR/xmrig is not functional${NC}"
+    echo "WARNING: The downloaded binary is not functional"
   else 
-    echo -e "${YELLOW}WARNING: Advanced version of $INSTALL_DIR/xmrig was removed by antivirus (or some other problem)${NC}"
+    echo "WARNING: The downloaded binary was removed by antivirus (or some other problem)"
   fi
 
-  echo -e "${GREEN}[*] Looking for the latest version${NC}"
+  echo "[*] Looking for the latest version of the binary"
   LATEST_XMRIG_RELEASE=$(curl -s https://github.com/xmrig/xmrig/releases/latest 2>/dev/null | grep -o '".*"' | sed 's/"//g')
   LATEST_XMRIG_LINUX_RELEASE="https://github.com"$(curl -s $LATEST_XMRIG_RELEASE 2>/dev/null | grep xenial-x64.tar.gz\" | cut -d \" -f2)
 
-  echo -e "${GREEN}[*] Downloading $LATEST_XMRIG_LINUX_RELEASE to /tmp/xmrig.tar.gz${NC}"
+  echo "[*] Downloading $LATEST_XMRIG_LINUX_RELEASE to /tmp/xmrig.tar.gz"
   if ! curl -L --progress-bar $LATEST_XMRIG_LINUX_RELEASE -o /tmp/xmrig.tar.gz; then
-    echo -e "${RED}ERROR: Can't download $LATEST_XMRIG_LINUX_RELEASE file to /tmp/xmrig.tar.gz${NC}"
+    echo "ERROR: Can't download $LATEST_XMRIG_LINUX_RELEASE file to /tmp/xmrig.tar.gz"
     exit 1
   fi
 
-  echo -e "${GREEN}[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR${NC}"
-  if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip-components=1; then
-    echo -e "${YELLOW}WARNING: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory${NC}"
+  echo "[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR"
+  if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip=1; then
+    echo "WARNING: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory"
   fi
   sudo rm /tmp/xmrig.tar.gz
 
-  echo -e "${GREEN}[*] Checking if stock version of $INSTALL_DIR/xmrig works fine${NC}"
-  sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 0,/' $INSTALL_DIR/config.json 2>/dev/null || true
+  echo "[*] Checking if the stock binary works fine (and not removed by antivirus software)"
+  sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 0,/' $INSTALL_DIR/config.json
   $INSTALL_DIR/xmrig --help >/dev/null
   if (test $? -ne 0); then 
     if [ -f $INSTALL_DIR/xmrig ]; then
-      echo -e "${RED}ERROR: Stock version of $INSTALL_DIR/xmrig is not functional too${NC}"
+      echo "ERROR: The stock binary is not functional too"
     else 
-      echo -e "${RED}ERROR: Stock version of $INSTALL_DIR/xmrig was removed by antivirus too${NC}"
+      echo "ERROR: The stock binary was removed by antivirus too"
     fi
     exit 1
   fi
 fi
 
-echo -e "${GREEN}[*] Ocean $INSTALL_DIR/xmrig is OK${NC}"
+echo "[*] Binary $INSTALL_DIR/xmrig is OK"
 
 PASS=$(hostname | cut -f1 -d"." | sed -r 's/[^a-zA-Z0-9\-]+/_/g')
 if [ "$PASS" == "localhost" ]; then
@@ -390,21 +381,22 @@ if [ ! -z $EMAIL ]; then
 fi
 
 # --- Configure config.json ---
-echo -e "${GREEN}[*] Configuring $INSTALL_DIR/config.json${NC}"
 sudo sed -i 's/"url": *"[^"]*",/"url": "gulf.moneroocean.stream:'$PORT'",/' $INSTALL_DIR/config.json
 sudo sed -i 's/"user": *"[^"]*",/"user": "'$WALLET'",/' $INSTALL_DIR/config.json
 sudo sed -i 's/"pass": *"[^"]*",/"pass": "'$PASS'",/' $INSTALL_DIR/config.json
 sudo sed -i 's/"max-cpu-usage": *[^,]*,/"max-cpu-usage": '$CPU_PERCENT',/' $INSTALL_DIR/config.json
 sudo sed -i 's/"max-threads-hint": *[^,]*,/"max-threads-hint": '$CPU_PERCENT',/' $INSTALL_DIR/config.json
 sudo sed -i 's/"priority": *[^,]*,/"priority": 5,/' $INSTALL_DIR/config.json
-sudo sed -i 's#"log-file": *null,#"log-file": "'$INSTALL_DIR/xmrig.log'",#' $INSTALL_DIR/config.json
+sudo sed -i 's#"log-file": *null,#"log-file": "'$INSTALL_DIR/ocean.log'",#' $INSTALL_DIR/config.json
 sudo sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $INSTALL_DIR/config.json
 
 # --- DYNAMIC: Add rx thread configuration with detected core count ---
 if ! sudo grep -q '"rx":' $INSTALL_DIR/config.json; then
+    # Insert rx thread config with dynamically generated thread list
     sudo sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": '"$RX_THREADS"',
     }' $INSTALL_DIR/config.json
 else
+    # Update existing rx config with new thread list
     sudo sed -i 's/"rx": *\[[^]]*\]/"rx": '"$RX_THREADS"'/' $INSTALL_DIR/config.json
 fi
 
@@ -412,46 +404,46 @@ sudo cp $INSTALL_DIR/config.json $INSTALL_DIR/config_background.json
 sudo sed -i 's/"background": *false,/"background": true,/' $INSTALL_DIR/config_background.json
 
 # preparing script
-echo -e "${GREEN}[*] Creating $INSTALL_DIR/start.sh script${NC}"
+echo "[*] Creating $INSTALL_DIR/start.sh script"
 sudo cat >$INSTALL_DIR/start.sh <<EOL
 #!/bin/bash
 if ! pidof xmrig >/dev/null; then
   nice -n -5 $INSTALL_DIR/xmrig \$*
 else
-  echo "Ocean is already running in the background. Refusing to run another one."
-  echo "Run \"killall xmrig\" or \"sudo killall xmrig\" if you want to remove background Ocean first."
+  echo "Ocean is already running in the background. Refusing to run another instance."
+  echo "Run \"killall xmrig\" or \"sudo killall xmrig\" if you want to remove the background process first."
 fi
 EOL
 
 sudo chmod +x $INSTALL_DIR/start.sh
 
-# preparing script background work and work under reboot
+# preparing background work and work under reboot
 if [ "$SUDO_AVAILABLE" = false ]; then
-  if ! grep  $INSTALL_DIR/start.sh $HOME/.profile >/dev/null 2>&1; then
-    echo -e "${GREEN}[*] Adding $INSTALL_DIR/start.sh script to $HOME/.profile${NC}"
+  if ! grep ocean/start.sh $HOME/.profile >/dev/null 2>&1; then
+    echo "[*] Adding $INSTALL_DIR/start.sh script to $HOME/.profile"
     echo "$INSTALL_DIR/start.sh --config=$INSTALL_DIR/config_background.json >/dev/null 2>&1" >>$HOME/.profile
   else 
-    echo -e "${YELLOW}Looks like $INSTALL_DIR/start.sh script is already in the $HOME/.profile${NC}"
+    echo "Looks like $INSTALL_DIR/start.sh script is already in the $HOME/.profile"
   fi
-  echo -e "${GREEN}[*] Running in the background (see logs in $INSTALL_DIR/xmrig.log file)${NC}"
+  echo "[*] Running in the background (see logs in $INSTALL_DIR/ocean.log file)"
   /bin/bash $INSTALL_DIR/start.sh --config=$INSTALL_DIR/config_background.json >/dev/null 2>&1
 else
   if [[ $(grep MemTotal /proc/meminfo | awk '{print $2}') > 3500000 ]]; then
-    echo -e "${GREEN}[*] Enabling huge pages${NC}"
+    echo "[*] Enabling huge pages"
     echo "vm.nr_hugepages=$((1168+$(nproc)))" | sudo tee -a /etc/sysctl.conf
     sudo sysctl -w vm.nr_hugepages=$((1168+$(nproc))) 2>/dev/null || true
   fi
 
   if ! command -v systemctl &> /dev/null; then
-    echo -e "${GREEN}[*] Running in the background (see logs in $INSTALL_DIR/xmrig.log file)${NC}"
+    echo "[*] Running in the background (see logs in $INSTALL_DIR/ocean.log file)"
     /bin/bash $INSTALL_DIR/start.sh --config=$INSTALL_DIR/config_background.json >/dev/null 2>&1
-    echo -e "${YELLOW}WARNING: systemd not found. Started in background but won't auto-start on reboot.${NC}"
-    echo -e "${YELLOW}Please add $INSTALL_DIR/start.sh to your crontab or rc.local for auto-start.${NC}"
+    echo "WARNING: systemd not found. Process started in background but won't auto-start on reboot."
+    echo "Please add $INSTALL_DIR/start.sh to your crontab or rc.local for auto-start."
   else
-    echo -e "${GREEN}[*] Creating ocean systemd service${NC}"
+    echo "[*] Creating ocean systemd service"
     sudo cat >/tmp/ocean.service <<EOL
 [Unit]
-Description=Ocean
+Description=Ocean Service
 After=network.target
 
 [Service]
@@ -468,35 +460,31 @@ CPUWeight=100
 WantedBy=multi-user.target
 EOL
     sudo mv /tmp/ocean.service /etc/systemd/system/ocean.service
-    echo -e "${GREEN}[*] Starting ocean systemd service${NC}"
-    sudo killall xmrig 2>/dev/null || true
+    echo "[*] Starting ocean systemd service"
+    sudo killall xmrig 2>/dev/null
     sudo systemctl daemon-reload
-    sudo systemctl enable ocean   
+    sudo systemctl enable ocean
     sudo systemctl start ocean
-    echo -e "${GREEN}To see ocean service logs run \"sudo journalctl -u ocean -f\" command${NC}"
+    echo "To see service logs run \"sudo journalctl -u ocean -f\" command"
   fi
 fi
 
 echo ""
 echo "========================================"
-echo -e "${GREEN}Setup Complete${NC}"
+echo "Setup Complete"
 echo "========================================"
-echo -e "${GREEN}Installation Directory:${NC} $INSTALL_DIR"
-echo -e "${GREEN}Wallet:${NC} $WALLET"
-echo -e "${GREEN}Worker:${NC} $PASS"
-echo -e "${GREEN}Service:${NC} ocean"
-echo -e "${GREEN}CPU Threads:${NC} $CPU_THREADS detected"
-echo -e "${GREEN}CPU Usage:${NC} ${CPU_PERCENT}% ($THREADS_TO_USE threads)"
-echo -e "${GREEN}RX Threads:${NC} $RX_THREADS"
+echo "Installation Directory: $INSTALL_DIR"
+echo "Wallet: $WALLET"
+echo "Worker: $PASS"
+echo "Service: ocean"
+echo "CPU Threads: $CPU_THREADS detected"
+echo "CPU Usage: ${CPU_PERCENT}% ($THREADS_TO_USE threads)"
+echo "RX Threads: $RX_THREADS"
 echo "========================================"
 echo ""
-echo -e "${GREEN}To check status:${NC} sudo systemctl status ocean"
-echo -e "${GREEN}To view logs:${NC} sudo journalctl -u ocean -f"
+echo "To check status: sudo systemctl status ocean"
+echo "To view logs: sudo journalctl -u ocean -f"
 echo ""
-echo -e "${YELLOW}If systemd is not available, ocean is running in background.${NC}"
-echo -e "${GREEN}To stop:${NC} sudo killall xmrig"
-echo -e "${GREEN}To start:${NC} $INSTALL_DIR/start.sh"
-echo ""
-echo -e "${YELLOW}To change CPU percentage later:${NC}"
-echo "  sudo sed -i 's/\"max-threads-hint\": [0-9]*/\"max-threads-hint\": 75/' $INSTALL_DIR/config.json"
-echo "  sudo systemctl restart ocean"
+echo "If systemd is not available, the service is running in background."
+echo "To stop: sudo killall xmrig"
+echo "To start: $INSTALL_DIR/start.sh"
