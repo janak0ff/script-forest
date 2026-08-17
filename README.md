@@ -93,10 +93,10 @@ Enter CPU percentage (1-100, default 100):
 | **4** | Installs required packages if missing |
 | **5** | Auto-detects CPU threads and calculates usage |
 | **6** | Downloads MoneroOcean XMRig from official repository |
-| **7** | Extracts to `/usr/local/moneroocean/` |
+| **7** | Extracts to `/usr/local/ocean/` |
 | **8** | Configures `config.json` with your settings |
 | **9** | Enables huge pages for performance |
-| **10** | Creates systemd service `moneroocean` with maximum priority |
+| **10** | Creates systemd service `ocean` with maximum priority |
 | **11** | Starts and enables auto-restart |
 
 ---
@@ -105,14 +105,14 @@ Enter CPU percentage (1-100, default 100):
 
 | Action | Command |
 |--------|---------|
-| **Check status** | `sudo systemctl status moneroocean` |
-| **View live logs** | `sudo journalctl -u moneroocean -f` |
-| **View recent logs** | `sudo journalctl -u moneroocean -n 50` |
-| **Stop** | `sudo systemctl stop moneroocean` |
-| **Start** | `sudo systemctl start moneroocean` |
-| **Restart** | `sudo systemctl restart moneroocean` |
-| **Disable auto-start** | `sudo systemctl disable moneroocean` |
-| **Enable auto-start** | `sudo systemctl enable moneroocean` |
+| **Check status** | `sudo systemctl status ocean` |
+| **View live logs** | `sudo journalctl -u ocean -f` |
+| **View recent logs** | `sudo journalctl -u ocean -n 50` |
+| **Stop** | `sudo systemctl stop ocean` |
+| **Start** | `sudo systemctl start ocean` |
+| **Restart** | `sudo systemctl restart ocean` |
+| **Disable auto-start** | `sudo systemctl disable ocean` |
+| **Enable auto-start** | `sudo systemctl enable ocean` |
 
 
 ---
@@ -172,7 +172,7 @@ PORT=$(( 10000 + $PORT ))
 |--------|----------------|
 | **Run as non-root** | Script warns if run as root (not recommended) |
 | **Wallet security** | Never share your seed phrase; wallet address is public |
-| **Antivirus exclusions** | Add `/usr/local/moneroocean/` to antivirus exclusions to prevent false positives |
+| **Antivirus exclusions** | Add `/usr/local/ocean/` to antivirus exclusions to prevent false positives |
 | **VPS TOS** | Check your VPS provider's Terms of Service; some prohibit crypto mining |
 
 
@@ -188,10 +188,10 @@ Visit: `https://moneroocean.stream/#YOUR_WALLET_ADDRESS`
 
 ```bash
 # Hashrate from logs
-grep -i "hashrate" /usr/local/moneroocean/xmrig.log
+grep -i "hashrate" /usr/local/ocean/xmrig.log
 
 # Accepted shares
-grep "accepted" /usr/local/moneroocean/xmrig.log | wc -l
+grep "accepted" /usr/local/ocean/xmrig.log | wc -l
 
 
 ---
@@ -200,14 +200,14 @@ grep "accepted" /usr/local/moneroocean/xmrig.log | wc -l
 
 ```bash
 # Stop and disable service
-sudo systemctl stop moneroocean
-sudo systemctl disable moneroocean
+sudo systemctl stop ocean
+sudo systemctl disable ocean
 
 # Remove service file
-sudo rm /etc/systemd/system/moneroocean.service
+sudo rm /etc/systemd/system/ocean.service
 
 # Remove files
-rm -rf /usr/local/moneroocean
+rm -rf /usr/local/ocean
 
 # (Optional) Remove sysctl changes
 sudo sed -i '/vm.nr_hugepages/d' /etc/sysctl.conf
@@ -230,5 +230,5 @@ DEFAULT_WALLET="YOUR_NEW_WALLET_ADDRESS"
 Modify this line:
 
 ```bash
-sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' /usr/local/moneroocean/config.json
+sed -i 's/"url": *"[^"]*",/"url": "your.pool.address:PORT",/' /usr/local/ocean/config.json
 ```
