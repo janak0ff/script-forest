@@ -53,24 +53,11 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/B
 View source:
 https://github.com/janak0ff/script-forest/tree/Batch-Video-Compressor
 
----
-
-### 4. MoneroOcean Setup
-
-Installs and configures the MoneroOcean.
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/janak0ff/script-forest/Crypto-setup/cry.sh)"
-```
-
-View source:
-https://github.com/janak0ff/script-forest/tree/Crypto-setup
-
 
 ---
 
 
-### 5. IMAP Sync Tool 
+### 4. IMAP Sync Tool 
 
 A comprehensive IMAP/Zimbra migration management tool.
 
