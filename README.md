@@ -87,4 +87,4 @@ bash -c "$(wget -qO- <script-url>)"
 
 For url you can use [https://www.plainraw.com/](https://www.plainraw.com/)
 
-> **Always review scripts before executing them**
+> Disclaimer - **Always review scripts before executing them**
