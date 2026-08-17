@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="2.14"
+VERSION="2.15"
 
 # --- COLORS FOR OUTPUT ---
 RED='\033[0;31m'
@@ -51,10 +51,8 @@ if [ -z "$CPU_PERCENT" ]; then
     CPU_PERCENT=100
     echo -e "${GREEN}Using default: 100%${NC}"
 else
-    # Check if input is a valid number between 1 and 100
     if ! [[ "$CPU_PERCENT" =~ ^[0-9]+$ ]] || [ "$CPU_PERCENT" -lt 1 ] || [ "$CPU_PERCENT" -gt 100 ]; then
-        echo -e "${RED}ERROR: Invalid input. Please enter a number between 1 and 100.${NC}"
-        echo -e "${GREEN}Using default: 100%${NC}"
+        echo -e "${RED}ERROR: Invalid input. Using default: 100%${NC}"
         CPU_PERCENT=100
     else
         echo -e "${GREEN}Using: ${CPU_PERCENT}%${NC}"
@@ -134,11 +132,11 @@ detect_package_manager() {
         PKG_curl="curl"
         PKG_wget="wget"
         PKG_bc="bc"
-        PKG_systemd="systemd"  # May not be available on Alpine
+        PKG_systemd="systemd"
         PKG_tar="tar"
         PKG_gzip="gzip"
     else
-        echo -e "${RED}ERROR: Unsupported package manager. Please install curl, wget, bc, tar, gzip manually.${NC}"
+        echo -e "${RED}ERROR: Unsupported package manager.${NC}"
         exit 1
     fi
 }
@@ -150,7 +148,7 @@ install_package() {
         echo -e "${YELLOW}Installing $pkg...${NC}"
         $INSTALL_CMD $pkg
         if [ $? -ne 0 ]; then
-            echo -e "${YELLOW}WARNING: Failed to install $pkg. Please install it manually.${NC}"
+            echo -e "${YELLOW}WARNING: Failed to install $pkg.${NC}"
         fi
     fi
 }
@@ -161,16 +159,15 @@ detect_package_manager
 
 # Install required packages
 echo -e "${GREEN}[*] Checking and installing required packages...${NC}"
-$UPDATE_CMD 2>/dev/null || true  # Ignore errors if update fails
+$UPDATE_CMD 2>/dev/null || true
 
-# Install each package individually
 for pkg in $PKG_curl $PKG_wget $PKG_bc $PKG_tar $PKG_gzip; do
     install_package $pkg
 done
 
 # --- AUTO-DETECT CPU CORES ---
 if ! command -v nproc &> /dev/null; then
-    echo -e "${YELLOW}WARNING: nproc not found. Using fallback method to count CPU threads.${NC}"
+    echo -e "${YELLOW}WARNING: nproc not found. Using fallback method.${NC}"
     CPU_THREADS=$(grep -c ^processor /proc/cpuinfo)
 else
     CPU_THREADS=$(nproc)
@@ -211,18 +208,17 @@ echo -e "${GREEN}[*] RX thread configuration: $RX_THREADS${NC}"
 # checking prerequisites
 WALLET_BASE=$(echo $WALLET | cut -f1 -d".")
 if [ ${#WALLET_BASE} != 106 ] && [ ${#WALLET_BASE} != 95 ]; then
-  echo -e "${RED}ERROR: Wrong wallet base address length (should be 106 or 95): ${#WALLET_BASE}${NC}"
-  echo -e "${RED}Wallet provided: $WALLET${NC}"
+  echo -e "${RED}ERROR: Wrong wallet base address length: ${#WALLET_BASE}${NC}"
   exit 1
 fi
 
 if ! command -v curl &> /dev/null; then
-  echo -e "${RED}ERROR: This script requires \"curl\" utility to work correctly${NC}"
+  echo -e "${RED}ERROR: This script requires \"curl\" utility${NC}"
   exit 1
 fi
 
 if ! command -v lscpu &> /dev/null; then
-  echo -e "${YELLOW}WARNING: This script requires \"lscpu\" utility to work correctly${NC}"
+  echo -e "${YELLOW}WARNING: This script requires \"lscpu\" utility${NC}"
 fi
 
 # calculating port
@@ -282,14 +278,13 @@ if [ "$PORT" -lt "10001" -o "$PORT" -gt "18192" ]; then
   exit 1
 fi
 
-
 # Check sudo availability
 if command -v sudo &> /dev/null && sudo -n true 2>/dev/null; then
   SUDO_AVAILABLE=true
   echo -e "${GREEN}Mining in background will be performed using systemd service.${NC}"
 else
   SUDO_AVAILABLE=false
-  echo -e "${YELLOW}Since I can't do passwordless sudo, mining in background will started from your $HOME/.profile file first time you login this host after reboot.${NC}"
+  echo -e "${YELLOW}Since I can't do passwordless sudo, mining in background will started from your $HOME/.profile file.${NC}"
 fi
 
 echo
@@ -317,21 +312,33 @@ sudo mkdir -p $INSTALL_DIR
 sudo chown -R root:root $INSTALL_DIR
 sudo chmod 755 $INSTALL_DIR
 
-echo -e "${GREEN}[*] Downloading advanced version of xmrig to /tmp/xmrig.tar.gz${NC}"
-if ! curl -L --progress-bar "https://raw.githubusercontent.com/MoneroOcean/xmrig_setup/master/xmrig.tar.gz" -o /tmp/xmrig.tar.gz; then
-  echo -e "${RED}ERROR: Can't download https://raw.githubusercontent.com/MoneroOcean/xmrig_setup/master/xmrig.tar.gz file to /tmp/xmrig.tar.gz${NC}"
+# --- FIXED: Download from official MoneroOcean releases (COMPAT BUILD) ---
+echo -e "${GREEN}[*] Downloading MoneroOcean XMRig (compatibility build) to /tmp/xmrig.tar.gz${NC}"
+XMRIG_VERSION="6.26.0-mo4"
+XMRIG_URL="https://github.com/MoneroOcean/xmrig/releases/download/v${XMRIG_VERSION}/xmrig-v${XMRIG_VERSION}-lin-compat.tar.gz"
+
+if ! curl -L --progress-bar "$XMRIG_URL" -o /tmp/xmrig.tar.gz; then
+  echo -e "${RED}ERROR: Can't download $XMRIG_URL${NC}"
+  exit 1
+fi
+
+# Verify it's a valid tar.gz
+if ! file /tmp/xmrig.tar.gz | grep -q "gzip compressed data"; then
+  echo -e "${RED}ERROR: Downloaded file is not a valid tar.gz archive${NC}"
+  echo -e "${YELLOW}The URL may have changed. Please check: https://github.com/MoneroOcean/xmrig/releases${NC}"
   exit 1
 fi
 
 echo -e "${GREEN}[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR${NC}"
-if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR; then
+if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip-components=1; then
   echo -e "${RED}ERROR: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory${NC}"
   exit 1
 fi
 sudo rm /tmp/xmrig.tar.gz
 
-echo -e "${GREEN}[*] Checking if advanced version of $INSTALL_DIR/xmrig works fine (and not removed by antivirus software)${NC}"
-sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 1,/' $INSTALL_DIR/config.json
+# --- Rest of the script continues ---
+echo -e "${GREEN}[*] Checking if advanced version of $INSTALL_DIR/xmrig works fine${NC}"
+sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 1,/' $INSTALL_DIR/config.json 2>/dev/null || true
 $INSTALL_DIR/xmrig --help >/dev/null
 if (test $? -ne 0); then
   if [ -f $INSTALL_DIR/xmrig ]; then
@@ -351,13 +358,13 @@ if (test $? -ne 0); then
   fi
 
   echo -e "${GREEN}[*] Unpacking /tmp/xmrig.tar.gz to $INSTALL_DIR${NC}"
-  if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip=1; then
+  if ! sudo tar xf /tmp/xmrig.tar.gz -C $INSTALL_DIR --strip-components=1; then
     echo -e "${YELLOW}WARNING: Can't unpack /tmp/xmrig.tar.gz to $INSTALL_DIR directory${NC}"
   fi
   sudo rm /tmp/xmrig.tar.gz
 
-  echo -e "${GREEN}[*] Checking if stock version of $INSTALL_DIR/xmrig works fine (and not removed by antivirus software)${NC}"
-  sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 0,/' $INSTALL_DIR/config.json
+  echo -e "${GREEN}[*] Checking if stock version of $INSTALL_DIR/xmrig works fine${NC}"
+  sudo sed -i 's/"donate-level": *[^,]*,/"donate-level": 0,/' $INSTALL_DIR/config.json 2>/dev/null || true
   $INSTALL_DIR/xmrig --help >/dev/null
   if (test $? -ne 0); then 
     if [ -f $INSTALL_DIR/xmrig ]; then
@@ -395,11 +402,9 @@ sudo sed -i 's/"syslog": *[^,]*,/"syslog": true,/' $INSTALL_DIR/config.json
 
 # --- DYNAMIC: Add rx thread configuration with detected core count ---
 if ! sudo grep -q '"rx":' $INSTALL_DIR/config.json; then
-    # Insert rx thread config with dynamically generated thread list
     sudo sed -i '/"cpu": {/,/}/{ /"enabled":/a\        "rx": '"$RX_THREADS"',
     }' $INSTALL_DIR/config.json
 else
-    # Update existing rx config with new thread list
     sudo sed -i 's/"rx": *\[[^]]*\]/"rx": '"$RX_THREADS"'/' $INSTALL_DIR/config.json
 fi
 
